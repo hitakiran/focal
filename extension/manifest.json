@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "Video Recap",
+  "version": "0.1",
+  "description": "Recap the part of a YouTube video you've already watched.",
+
+  "permissions": ["activeTab"],
+
+  "content_scripts": [
+    {
+      "matches": ["*://*.youtube.com/watch*"],
+      "js": ["content.js"]
+    }
+  ]
+}
