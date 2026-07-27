@@ -1,78 +1,64 @@
+// NextResponse helps us send JSON data back to whoever called this API.
 import { NextResponse } from "next/server";
-import {
-  fetchTranscript,
-  YoutubeTranscriptDisabledError,
-  YoutubeTranscriptInvalidVideoIdError,
-  YoutubeTranscriptNotAvailableError,
-  YoutubeTranscriptNotAvailableLanguageError,
-  YoutubeTranscriptVideoUnavailableError,
-} from "youtube-transcript-plus";
 
-// YouTube video IDs are always 11 characters.
-const VIDEO_ID_PATTERN = /^[a-zA-Z0-9_-]{11}$/;
+// This package fetches YouTube captions for us.
+import { fetchTranscript } from "youtube-transcript-plus";
 
-function extractVideoId(videoUrl) {
-  if (typeof videoUrl !== "string" || !videoUrl.trim()) {
+// Every YouTube video has an ID that is exactly 11 characters long.
+// Example: in https://youtube.com/watch?v=dQw4w9WgXcQ, the ID is "dQw4w9WgXcQ"
+const VIDEO_ID_LENGTH = 11;
+
+// This function takes a YouTube link and tries to pull out the video ID.
+function getVideoIdFromUrl(videoUrl) {
+  // Step 1: Make sure we actually got a non-empty string.
+  if (typeof videoUrl !== "string" || videoUrl.trim() === "") {
     return null;
   }
 
-  const trimmed = videoUrl.trim();
+  const url = videoUrl.trim();
 
-  // Accept a bare video ID as well as full URLs.
-  if (VIDEO_ID_PATTERN.test(trimmed)) {
-    return trimmed;
+  // Step 2: If the user pasted just the ID (like "dQw4w9WgXcQ"), return it.
+  if (url.length === VIDEO_ID_LENGTH && !url.includes("/") && !url.includes(".")) {
+    return url;
   }
 
+  // Step 3: Try to read the URL and find the ID inside it.
   try {
-    const url = new URL(trimmed);
-    const host = url.hostname.replace(/^www\./, "");
+    const parsedUrl = new URL(url);
 
-    if (host === "youtu.be") {
-      const id = url.pathname.slice(1).split("/")[0];
-      return VIDEO_ID_PATTERN.test(id) ? id : null;
+    // For links like: https://youtu.be/dQw4w9WgXcQ
+    if (parsedUrl.hostname.includes("youtu.be")) {
+      const videoId = parsedUrl.pathname.replace("/", "");
+      return videoId.length === VIDEO_ID_LENGTH ? videoId : null;
     }
 
-    if (host === "youtube.com" || host === "m.youtube.com") {
-      if (url.pathname === "/watch") {
-        const id = url.searchParams.get("v");
-        return id && VIDEO_ID_PATTERN.test(id) ? id : null;
+    // For links like: https://youtube.com/watch?v=dQw4w9WgXcQ
+    if (parsedUrl.hostname.includes("youtube.com")) {
+      const videoId = parsedUrl.searchParams.get("v");
+      if (videoId && videoId.length === VIDEO_ID_LENGTH) {
+        return videoId;
       }
 
-      const pathMatch = url.pathname.match(
-        /^\/(embed|shorts|live)\/([a-zA-Z0-9_-]{11})/
-      );
-      if (pathMatch) {
-        return pathMatch[2];
+      // For links like: https://youtube.com/shorts/dQw4w9WgXcQ
+      const pathParts = parsedUrl.pathname.split("/");
+      const lastPart = pathParts[pathParts.length - 1];
+      if (lastPart.length === VIDEO_ID_LENGTH) {
+        return lastPart;
       }
     }
   } catch {
+    // If URL parsing fails, the link format is not valid.
     return null;
   }
 
   return null;
 }
 
-function transcriptErrorMessage(error) {
-  if (error instanceof YoutubeTranscriptInvalidVideoIdError) {
-    return "Invalid YouTube video ID or URL.";
-  }
-  if (error instanceof YoutubeTranscriptVideoUnavailableError) {
-    return "This video is unavailable or has been removed.";
-  }
-  if (error instanceof YoutubeTranscriptDisabledError) {
-    return "Captions are disabled for this video. Use manual paste instead.";
-  }
-  if (error instanceof YoutubeTranscriptNotAvailableError) {
-    return "No captions are available for this video. Use manual paste instead.";
-  }
-  if (error instanceof YoutubeTranscriptNotAvailableLanguageError) {
-    return "Captions are not available in the requested language.";
-  }
-
-  return "Failed to fetch transcript. Use manual paste instead.";
-}
-
+// This is the main function that runs when someone sends a POST request
+// to /api/transcript
 export async function POST(request) {
+  // Step 1: Read the JSON body from the request.
+  // We expect something like: { "videoUrl": "https://youtube.com/watch?v=..." }
   let body;
 
   try {
@@ -84,48 +70,73 @@ export async function POST(request) {
     );
   }
 
-  const { videoUrl } = body;
+  const videoUrl = body.videoUrl;
 
-  if (!videoUrl || typeof videoUrl !== "string" || !videoUrl.trim()) {
+  // Step 2: Check that videoUrl was provided.
+  if (!videoUrl || typeof videoUrl !== "string" || videoUrl.trim() === "") {
     return NextResponse.json(
       { error: "Missing required field: videoUrl." },
       { status: 400 }
     );
   }
 
-  // Pull the 11-character ID out of watch, youtu.be, shorts, etc.
-  const videoId = extractVideoId(videoUrl);
+  // Step 3: Extract the video ID from the URL.
+  const videoId = getVideoIdFromUrl(videoUrl);
 
   if (!videoId) {
     return NextResponse.json(
-      { error: "Invalid YouTube URL. Expected a watch, youtu.be, or shorts link." },
+      { error: "Invalid YouTube URL. Please send a valid YouTube link." },
       { status: 400 }
     );
   }
 
+  // Step 4: Ask youtube-transcript-plus to fetch the captions.
   try {
-    // youtube-transcript-plus talks to YouTube's caption API under the hood.
-    const segments = await fetchTranscript(videoId);
+    const rawSegments = await fetchTranscript(videoId);
 
-    const transcript = segments.map(({ text, offset, duration }) => ({
-      text,
-      start: offset,
-      duration,
-    }));
+    // Step 5: Clean up the data into a simple format we can send back.
+    // Each segment has: text (what was said), start (when it starts), duration (how long it lasts)
+    const transcript = rawSegments.map((segment) => {
+      return {
+        text: segment.text,
+        start: segment.offset, // the library calls this "offset", we rename it to "start"
+        duration: segment.duration,
+      };
+    });
 
-    return NextResponse.json({ videoId, transcript });
+    // Step 6: Send back a success response.
+    return NextResponse.json({
+      videoId: videoId,
+      transcript: transcript,
+    });
   } catch (error) {
-    const message = transcriptErrorMessage(error);
-    const isClientError =
-      error instanceof YoutubeTranscriptInvalidVideoIdError ||
-      error instanceof YoutubeTranscriptVideoUnavailableError ||
-      error instanceof YoutubeTranscriptDisabledError ||
-      error instanceof YoutubeTranscriptNotAvailableError ||
-      error instanceof YoutubeTranscriptNotAvailableLanguageError;
+    // Step 7: If fetching failed, send back a helpful error message.
+    // Status 400 = the request was bad (bad URL, no captions, etc.)
+    // Status 500 = something went wrong on our/server side
+    let errorMessage = "Failed to fetch transcript. Use manual paste instead.";
+    let statusCode = 500;
+
+    if (error.message) {
+      errorMessage = error.message;
+    }
+
+    // These are common "expected" failures where manual paste makes sense.
+    if (
+      errorMessage.includes("disabled") ||
+      errorMessage.includes("not available") ||
+      errorMessage.includes("Invalid") ||
+      errorMessage.includes("unavailable")
+    ) {
+      statusCode = 400;
+      errorMessage = "No captions available for this video. Use manual paste instead.";
+    }
 
     return NextResponse.json(
-      { error: message, videoId },
-      { status: isClientError ? 400 : 500 }
+      {
+        error: errorMessage,
+        videoId: videoId,
+      },
+      { status: statusCode }
     );
   }
 }
