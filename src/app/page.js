@@ -2,11 +2,30 @@
 
 import { useState } from "react";
 
-// Turn seconds (like 65.4) into a readable time (like "1:05")
+// Turn seconds (like 220) into mm:ss (like "3:40")
 function formatTime(seconds) {
   const minutes = Math.floor(seconds / 60);
   const remainingSeconds = Math.floor(seconds % 60);
   return `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`;
+}
+
+// Turn mm:ss input (like "3:40") into total seconds (like 220)
+function parseTimeInput(input) {
+  const trimmed = input.trim();
+  const match = trimmed.match(/^(\d+):(\d{2})$/);
+
+  if (!match) {
+    return null;
+  }
+
+  const minutes = Number(match[1]);
+  const seconds = Number(match[2]);
+
+  if (seconds >= 60) {
+    return null;
+  }
+
+  return minutes * 60 + seconds;
 }
 
 export default function Home() {
@@ -54,6 +73,16 @@ export default function Home() {
     setAnalyzeError("");
     setKeyMoments([]);
     setNarration("");
+
+    const endTime = parseTimeInput(stoppedAt);
+
+    if (endTime === null || endTime <= 0) {
+      setAnalyzeError(
+        'Invalid time format. Use mm:ss (e.g. "3:40" or "0:45").'
+      );
+      return;
+    }
+
     setAnalyzeLoading(true);
 
     try {
@@ -65,7 +94,7 @@ export default function Home() {
         body: JSON.stringify({
           transcript,
           startTime: 0,
-          endTime: Number(stoppedAt),
+          endTime,
         }),
       });
 
@@ -149,13 +178,12 @@ export default function Home() {
         </p>
 
         <label className="flex flex-col gap-1">
-          <span className="text-sm font-medium">Time you stopped (seconds)</span>
+          <span className="text-sm font-medium">Time you stopped</span>
           <input
-            type="number"
-            min="0"
+            type="text"
             value={stoppedAt}
             onChange={(event) => setStoppedAt(event.target.value)}
-            placeholder="e.g. 120"
+            placeholder="e.g. 3:40"
             className="w-full rounded-lg border border-zinc-300 px-4 py-2 dark:border-zinc-700 dark:bg-zinc-900"
           />
         </label>
@@ -166,8 +194,7 @@ export default function Home() {
           disabled={
             analyzeLoading ||
             transcript.length === 0 ||
-            stoppedAt === "" ||
-            Number(stoppedAt) <= 0
+            stoppedAt.trim() === ""
           }
           className="w-fit rounded-lg bg-black px-5 py-2 text-white disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-black"
         >
