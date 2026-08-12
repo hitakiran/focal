@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Video Recap",
-  "version": "0.1",
+  "version": "0.2",
   "description": "Recap the part of a YouTube video you've already watched.",
 
   "permissions": ["activeTab"],

@@ -1,41 +1,23 @@
 // This file is a "content script."
 // Chrome injects it into YouTube watch pages (see manifest.json).
 //
-// Why a content script?
-// - It runs in the context of the web page (youtube.com).
-// - It can read info from the page (video time, URL).
-// - It can also add HTML to the page (our recap popup).
-//
-// Important: this file does NOT call localhost directly.
-// Chrome blocks that from youtube.com for security.
-// Instead, we send a message to background.js, which makes the API calls.
+// Phase 0: When the user pauses, show a "Recap" button in the top-right corner.
+// Phase 1 (next): Clicking the button will start the video highlight recap.
 
-console.log("Video Recap extension loaded (with popup UI)");
+console.log("Video Recap extension loaded (Phase 0: Recap button)");
 
-// ID we use to find/remove our popup on the page.
+const RECAP_BUTTON_ID = "video-recap-button";
 const OVERLAY_ID = "video-recap-overlay";
 
-// Track whether we've already attached listeners, so we only do it once.
 let listenersAttached = false;
 
-// Turn seconds (like 31) into mm:ss (like "0:31")
-function formatTime(seconds) {
-  const minutes = Math.floor(seconds / 60);
-  const remainingSeconds = Math.floor(seconds % 60);
-  return `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`;
-}
+// Remember where the user paused so we can use it in later phases.
+let lastPauseInfo = {
+  videoUrl: "",
+  pausedAt: 0,
+};
 
-// Escape text so it is safe to show inside HTML.
-function escapeHtml(text) {
-  return String(text)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-// Inject CSS once. YouTube has high z-index layers, so we use !important.
-function ensureOverlayStyles() {
+function ensureStyles() {
   if (document.getElementById("video-recap-styles")) {
     return;
   }
@@ -43,182 +25,72 @@ function ensureOverlayStyles() {
   const style = document.createElement("style");
   style.id = "video-recap-styles";
   style.textContent = `
-    #video-recap-overlay {
+    #video-recap-button {
       position: fixed !important;
-      inset: 0 !important;
+      top: 80px !important;
+      right: 20px !important;
       z-index: 2147483647 !important;
-      background: rgba(0, 0, 0, 0.6) !important;
-      display: flex !important;
-      align-items: center !important;
-      justify-content: center !important;
-      padding: 16px !important;
-      box-sizing: border-box !important;
-    }
-
-    #video-recap-panel {
-      position: relative !important;
-      width: 100% !important;
-      max-width: 420px !important;
-      max-height: 80vh !important;
-      overflow-y: auto !important;
-      background: #ffffff !important;
-      color: #111111 !important;
-      border-radius: 12px !important;
-      padding: 20px !important;
+      padding: 10px 16px !important;
+      border: none !important;
+      border-radius: 999px !important;
+      background: #ff0000 !important;
+      color: #ffffff !important;
       font-family: Arial, sans-serif !important;
       font-size: 14px !important;
-      line-height: 1.5 !important;
-      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35) !important;
+      font-weight: bold !important;
+      cursor: pointer !important;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25) !important;
     }
 
-    #video-recap-close {
-      position: absolute !important;
-      top: 8px !important;
-      right: 10px !important;
-      border: none !important;
-      background: transparent !important;
-      font-size: 24px !important;
-      cursor: pointer !important;
-      color: #666666 !important;
+    #video-recap-button:hover {
+      background: #cc0000 !important;
     }
   `;
 
   document.documentElement.appendChild(style);
 }
 
-// Remove any existing popup before showing a new one.
-function removeOverlay() {
-  const existing = document.getElementById(OVERLAY_ID);
-  if (existing) {
-    existing.remove();
+function hideRecapButton() {
+  const button = document.getElementById(RECAP_BUTTON_ID);
+  if (button) {
+    button.remove();
   }
 }
 
-// Add the popup to the page (on <html>, not just <body>, so YouTube can't hide it easily).
-function showOverlay(panelHtml) {
-  ensureOverlayStyles();
-  removeOverlay();
+function showRecapButton() {
+  ensureStyles();
+  hideRecapButton();
 
-  const overlay = document.createElement("div");
-  overlay.id = OVERLAY_ID;
-  overlay.innerHTML = `
-    <div id="video-recap-panel">
-      <button id="video-recap-close" type="button">&times;</button>
-      ${panelHtml}
-    </div>
-  `;
+  const button = document.createElement("button");
+  button.id = RECAP_BUTTON_ID;
+  button.type = "button";
+  button.textContent = "Recap";
 
-  // Click the dark background to close.
-  overlay.addEventListener("click", (event) => {
-    if (event.target === overlay) {
-      removeOverlay();
-    }
+  button.addEventListener("click", () => {
+    console.log("Video Recap: Recap button clicked");
+    console.log("Video Recap: paused at", lastPauseInfo.pausedAt, "seconds");
+    console.log("Video Recap: video URL", lastPauseInfo.videoUrl);
+    // Phase 1 will start the highlight recap here.
   });
 
-  overlay.querySelector("#video-recap-close").addEventListener("click", removeOverlay);
-
-  document.documentElement.appendChild(overlay);
-  console.log("Video Recap: popup shown on page");
-}
-
-function showLoadingOverlay() {
-  showOverlay(`
-    <h2 style="margin: 0 0 8px 0; font-size: 20px;">Video Recap</h2>
-    <p style="margin: 0; color: #555555;">Generating your recap...</p>
-  `);
-}
-
-function showRecapOverlay({ keyMoments, narration, endTime }) {
-  const momentsHtml = (keyMoments || [])
-    .map((moment) => {
-      return `
-        <li style="margin-bottom: 10px;">
-          <strong>${formatTime(moment.timestamp)} — ${escapeHtml(moment.title)}</strong><br />
-          <span style="color: #444444;">${escapeHtml(moment.description)}</span>
-        </li>
-      `;
-    })
-    .join("");
-
-  showOverlay(`
-    <h2 style="margin: 0 0 4px 0; font-size: 20px;">Video Recap</h2>
-    <p style="margin: 0 0 12px 0; color: #555555;">
-      What you watched (0:00 to ${formatTime(endTime)})
-    </p>
-    <h3 style="margin: 0 0 8px 0; font-size: 16px;">Narration</h3>
-    <p style="margin: 0 0 16px 0;">${escapeHtml(narration)}</p>
-    <h3 style="margin: 0 0 8px 0; font-size: 16px;">Key moments</h3>
-    <ul style="margin: 0; padding-left: 18px;">
-      ${momentsHtml}
-    </ul>
-  `);
-}
-
-function showErrorOverlay(message) {
-  showOverlay(`
-    <h2 style="margin: 0 0 8px 0; font-size: 20px;">Video Recap</h2>
-    <p style="margin: 0; color: #b00020;">${escapeHtml(message)}</p>
-  `);
-}
-
-function requestRecap(videoUrl, endTime) {
-  console.log("Video Recap: asking background script to fetch recap...");
-  showLoadingOverlay();
-
-  chrome.runtime.sendMessage(
-    {
-      type: "FETCH_RECAP",
-      videoUrl: videoUrl,
-      endTime: endTime,
-    },
-    (response) => {
-      if (chrome.runtime.lastError) {
-        console.error("Video Recap: message error:", chrome.runtime.lastError.message);
-        showErrorOverlay("Could not talk to the extension background script.");
-        return;
-      }
-
-      if (response.error) {
-        console.error("Video Recap: backend error:", response.error);
-        showErrorOverlay(response.error);
-        return;
-      }
-
-      console.log(
-        "Video Recap: transcript received,",
-        response.transcriptCount,
-        "segments"
-      );
-      console.log("Video Recap: key moments:", response.keyMoments);
-      console.log("Video Recap: narration:", response.narration);
-
-      try {
-        showRecapOverlay({
-          keyMoments: response.keyMoments,
-          narration: response.narration,
-          endTime: endTime,
-        });
-      } catch (error) {
-        console.error("Video Recap: popup error:", error);
-        showErrorOverlay("Could not display recap on the page.");
-      }
-    }
-  );
+  document.documentElement.appendChild(button);
+  console.log("Video Recap: Recap button shown (top right)");
 }
 
 function attachVideoListeners(video) {
   video.addEventListener("pause", () => {
-    const pausedAt = video.currentTime;
-    const videoUrl = window.location.href;
+    lastPauseInfo = {
+      videoUrl: window.location.href,
+      pausedAt: video.currentTime,
+    };
 
-    console.log("Video paused at:", pausedAt, "seconds");
-    console.log("Video URL:", videoUrl);
-
-    requestRecap(videoUrl, pausedAt);
+    console.log("Video paused at:", lastPauseInfo.pausedAt, "seconds");
+    showRecapButton();
   });
 
   video.addEventListener("play", () => {
     console.log("Video resumed at:", video.currentTime, "seconds");
+    hideRecapButton();
   });
 
   console.log("Video Recap: listening for play and pause events");
