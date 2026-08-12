@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useState } from "react";
 
 // Turn seconds (like 220) into mm:ss (like "3:40")
@@ -114,133 +115,158 @@ export default function Home() {
     }
   }
 
+  const inputClassName =
+    "w-full rounded-xl border border-focal-accent/20 bg-[#111827] px-4 py-2.5 text-white placeholder:text-focal-label outline-none focus:border-focal-accent";
+  const buttonClassName =
+    "rounded-xl bg-focal-primary px-5 py-2.5 text-[15px] font-semibold text-white hover:bg-focal-primary-hover disabled:cursor-not-allowed disabled:opacity-50";
+  const cardClassName =
+    "rounded-xl border border-focal-accent/20 bg-white/5 p-4";
+  const errorClassName =
+    "rounded-xl border border-red-400/30 bg-red-950/40 p-4 text-red-200";
+
   return (
-    <main className="mx-auto flex min-h-full w-full max-w-3xl flex-col gap-6 p-8">
-      <div>
-        <h1 className="text-2xl font-semibold">Transcript API Tester</h1>
-        <p className="mt-2 text-zinc-600 dark:text-zinc-400">
-          Paste a YouTube URL and click the button to test your API.
-        </p>
-      </div>
-
-      <div className="flex flex-col gap-3 sm:flex-row">
-        <input
-          type="text"
-          value={videoUrl}
-          onChange={(event) => setVideoUrl(event.target.value)}
-          placeholder="https://www.youtube.com/watch?v=..."
-          className="w-full rounded-lg border border-zinc-300 px-4 py-2 dark:border-zinc-700 dark:bg-zinc-900"
-        />
-        <button
-          type="button"
-          onClick={handleGetTranscript}
-          disabled={loading || videoUrl.trim() === ""}
-          className="rounded-lg bg-black px-5 py-2 text-white disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-black"
-        >
-          Get Transcript
-        </button>
-      </div>
-
-      {loading && <p className="text-zinc-600 dark:text-zinc-400">Loading...</p>}
-
-      {error && (
-        <div className="rounded-lg border border-red-300 bg-red-50 p-4 text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-300">
-          {error}
-        </div>
-      )}
-
-      {transcript.length > 0 && (
-        <div className="flex flex-col gap-3">
-          <h2 className="text-lg font-medium">
-            Transcript ({transcript.length} segments)
-          </h2>
-          <ul className="flex max-h-[60vh] flex-col gap-2 overflow-y-auto rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
-            {transcript.map((segment, index) => (
-              <li
-                key={`${segment.start}-${index}`}
-                className="border-b border-zinc-100 pb-2 last:border-b-0 dark:border-zinc-800"
-              >
-                <span className="mr-3 font-mono text-sm text-zinc-500">
-                  {formatTime(segment.start)}
-                </span>
-                <span>{segment.text}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      <div className="flex flex-col gap-3 border-t border-zinc-200 pt-6 dark:border-zinc-800">
-        <h2 className="text-lg font-medium">Analyze watched portion</h2>
-        <p className="text-sm text-zinc-600 dark:text-zinc-400">
-          Simulates a first-time viewer who started at 0 and paused partway
-          through.
-        </p>
-
-        <label className="flex flex-col gap-1">
-          <span className="text-sm font-medium">Time you stopped</span>
-          <input
-            type="text"
-            value={stoppedAt}
-            onChange={(event) => setStoppedAt(event.target.value)}
-            placeholder="e.g. 3:40"
-            className="w-full rounded-lg border border-zinc-300 px-4 py-2 dark:border-zinc-700 dark:bg-zinc-900"
+    <div className="flex min-h-full flex-col bg-focal-ink text-white">
+      <header className="mx-auto flex w-full max-w-5xl items-center justify-between px-6 py-6">
+        <div className="flex items-center gap-3">
+          <Image
+            src="/focal-logo.png"
+            alt="Focal"
+            width={40}
+            height={40}
+            className="rounded-lg"
           />
-        </label>
-
-        <button
-          type="button"
-          onClick={handleAnalyze}
-          disabled={
-            analyzeLoading ||
-            transcript.length === 0 ||
-            stoppedAt.trim() === ""
-          }
-          className="w-fit rounded-lg bg-black px-5 py-2 text-white disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-black"
+          <span className="text-xl font-bold tracking-[-0.02em]">Focal</span>
+        </div>
+        <a
+          href="https://github.com/hitakiran/focal"
+          className="text-[15px] font-semibold text-focal-accent hover:text-white"
         >
-          Analyze
-        </button>
-      </div>
+          GitHub
+        </a>
+      </header>
 
-      {analyzeLoading && (
-        <p className="text-zinc-600 dark:text-zinc-400">Analyzing...</p>
-      )}
-
-      {analyzeError && (
-        <div className="rounded-lg border border-red-300 bg-red-50 p-4 text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-300">
-          {analyzeError}
-        </div>
-      )}
-
-      {keyMoments.length > 0 && (
-        <div className="flex flex-col gap-3">
-          <h2 className="text-lg font-medium">Key moments</h2>
-          <ul className="flex flex-col gap-2 rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
-            {keyMoments.map((moment, index) => (
-              <li
-                key={`${moment.time ?? moment.start}-${index}`}
-                className="border-b border-zinc-100 pb-2 last:border-b-0 dark:border-zinc-800"
-              >
-                <span className="mr-3 font-mono text-sm text-zinc-500">
-                  {moment.endTime != null
-                    ? `${formatTime(moment.timestamp ?? moment.time ?? moment.start ?? 0)}–${formatTime(moment.endTime)}`
-                    : formatTime(moment.timestamp ?? moment.time ?? moment.start ?? 0)}
-                </span>
-                <span>{moment.text ?? moment.description ?? moment.title}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {narration && (
-        <div className="flex flex-col gap-2">
-          <h2 className="text-lg font-medium">Narration</h2>
-          <p className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
-            {narration}
+      <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-8 px-6 pb-20">
+        <div>
+          <p className="text-[13px] font-semibold uppercase tracking-wide text-focal-label">
+            Developer tools
+          </p>
+          <h1 className="mt-2 text-3xl font-bold tracking-[-0.02em]">
+            Transcript API Tester
+          </h1>
+          <p className="mt-2 text-focal-accent">
+            Paste a YouTube URL and click the button to test your API.
           </p>
         </div>
-      )}
-    </main>
+
+        <div className="flex flex-col gap-3 sm:flex-row">
+          <input
+            type="text"
+            value={videoUrl}
+            onChange={(event) => setVideoUrl(event.target.value)}
+            placeholder="https://www.youtube.com/watch?v=..."
+            className={inputClassName}
+          />
+          <button
+            type="button"
+            onClick={handleGetTranscript}
+            disabled={loading || videoUrl.trim() === ""}
+            className={`${buttonClassName} shrink-0`}
+          >
+            Get Transcript
+          </button>
+        </div>
+
+        {loading && <p className="text-focal-accent">Loading...</p>}
+
+        {error && <div className={errorClassName}>{error}</div>}
+
+        {transcript.length > 0 && (
+          <div className="flex flex-col gap-3">
+            <h2 className="text-lg font-semibold">
+              Transcript ({transcript.length} segments)
+            </h2>
+            <ul className={`flex max-h-[60vh] flex-col gap-2 overflow-y-auto ${cardClassName}`}>
+              {transcript.map((segment, index) => (
+                <li
+                  key={`${segment.start}-${index}`}
+                  className="border-b border-focal-accent/15 pb-2 last:border-b-0"
+                >
+                  <span className="mr-3 font-mono text-sm text-focal-accent">
+                    {formatTime(segment.start)}
+                  </span>
+                  <span className="text-white/90">{segment.text}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        <div className="flex flex-col gap-3 border-t border-focal-accent/20 pt-8">
+          <h2 className="text-lg font-semibold">Analyze watched portion</h2>
+          <p className="text-sm text-focal-accent">
+            Simulates a first-time viewer who started at 0 and paused partway
+            through.
+          </p>
+
+          <label className="flex flex-col gap-1">
+            <span className="text-sm font-semibold">Time you stopped</span>
+            <input
+              type="text"
+              value={stoppedAt}
+              onChange={(event) => setStoppedAt(event.target.value)}
+              placeholder="e.g. 3:40"
+              className={inputClassName}
+            />
+          </label>
+
+          <button
+            type="button"
+            onClick={handleAnalyze}
+            disabled={
+              analyzeLoading ||
+              transcript.length === 0 ||
+              stoppedAt.trim() === ""
+            }
+            className={`w-fit ${buttonClassName}`}
+          >
+            Analyze
+          </button>
+        </div>
+
+        {analyzeLoading && <p className="text-focal-accent">Analyzing...</p>}
+
+        {analyzeError && <div className={errorClassName}>{analyzeError}</div>}
+
+        {keyMoments.length > 0 && (
+          <div className="flex flex-col gap-3">
+            <h2 className="text-lg font-semibold">Key moments</h2>
+            <ul className={`flex flex-col gap-2 ${cardClassName}`}>
+              {keyMoments.map((moment, index) => (
+                <li
+                  key={`${moment.time ?? moment.start}-${index}`}
+                  className="border-b border-focal-accent/15 pb-2 last:border-b-0"
+                >
+                  <span className="mr-3 font-mono text-sm text-focal-accent">
+                    {moment.endTime != null
+                      ? `${formatTime(moment.timestamp ?? moment.time ?? moment.start ?? 0)}–${formatTime(moment.endTime)}`
+                      : formatTime(moment.timestamp ?? moment.time ?? moment.start ?? 0)}
+                  </span>
+                  <span className="text-white/90">
+                    {moment.text ?? moment.description ?? moment.title}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {narration && (
+          <div className="flex flex-col gap-2">
+            <h2 className="text-lg font-semibold">Narration</h2>
+            <p className={`${cardClassName} text-white/90`}>{narration}</p>
+          </div>
+        )}
+      </main>
+    </div>
   );
 }

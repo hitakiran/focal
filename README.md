@@ -47,7 +47,7 @@ Never commit `.env.local` — it is already in `.gitignore`.
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) to use the test UI.
+Open [http://localhost:3000](http://localhost:3000) for the API test UI.
 
 ### 5. Load the Chrome extension
 
