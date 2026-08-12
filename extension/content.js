@@ -1,16 +1,11 @@
 // This file is a "content script."
-// Chrome injects it into YouTube watch pages (see manifest.json).
-//
-// Phase 0: Show a "Recap" button when the user pauses.
-// Phase 1: Clicking Recap plays highlight clips.
-// Phase 2: Optional voiceover reads the narration while clips play.
+// It runs on YouTube watch pages and handles video playback + recap logic.
+// A recap popup appears on the page when you pause; popup.html still works from the toolbar.
 
-console.log("Video Recap extension loaded (Phase 2: optional voiceover)");
+console.log("Video Recap extension loaded");
 
-const RECAP_CONTROLS_ID = "video-recap-controls";
-const RECAP_BUTTON_ID = "video-recap-button";
-const RECAP_VOICEOVER_ID = "video-recap-voiceover";
 const RECAP_PANEL_ID = "video-recap-panel";
+const PAUSE_POPUP_ID = "video-recap-pause-popup";
 
 const MIN_CLIP_SECONDS = 3;
 const MAX_CLIP_SECONDS = 12;
@@ -18,14 +13,17 @@ const MAX_CLIP_SECONDS = 12;
 let listenersAttached = false;
 let videoElement = null;
 let isRecapPlaying = false;
-
-// User choice: off by default (video-only recap unless they turn this on).
+let isSegmentPlaying = false;
+let suppressPausePopup = false;
 let voiceoverEnabled = false;
 
 let lastPauseInfo = {
   videoUrl: "",
   pausedAt: 0,
 };
+
+// Saved after a recap finishes so the user can browse key moments with arrows.
+let lastRecapData = null;
 
 function getRecapBudget(pauseAt) {
   const target = pauseAt * 0.25;
@@ -36,14 +34,6 @@ function buildClipDurations(moments, pauseAt) {
   const rawDurations = moments.map((moment) => getClipDuration(moment, pauseAt));
   const budget = getRecapBudget(pauseAt);
   const total = rawDurations.reduce((sum, duration) => sum + duration, 0);
-
-  console.log(
-    "Video Recap: raw recap length",
-    total.toFixed(1),
-    "sec, budget",
-    budget.toFixed(1),
-    "sec"
-  );
 
   if (total <= budget) {
     return rawDurations;
@@ -92,7 +82,6 @@ function wait(ms) {
   });
 }
 
-// Split the full narration into one part per clip.
 function splitNarrationForClips(narration, clipCount) {
   const parts = Array.from({ length: clipCount }, () => "");
   const sentences =
@@ -113,7 +102,6 @@ function splitNarrationForClips(narration, clipCount) {
   return parts;
 }
 
-// Speak one clip's narration at a speed that fits that clip's length.
 function speakForClip(text, clipDurationSeconds) {
   return new Promise((resolve) => {
     if (!text?.trim() || !window.speechSynthesis) {
@@ -123,12 +111,8 @@ function speakForClip(text, clipDurationSeconds) {
 
     const utterance = new SpeechSynthesisUtterance(text.trim());
     const wordCount = text.trim().split(/\s+/).length;
-
-    // Rough guess: at normal speed, people speak about 2 words per second.
     const naturalDurationSeconds = wordCount / 2;
     let rate = naturalDurationSeconds / clipDurationSeconds;
-
-    // Keep speech slower and clearer — never rush the narrator.
     rate = Math.max(0.55, Math.min(rate, 0.9));
 
     utterance.rate = rate;
@@ -145,20 +129,17 @@ function stopVoiceover() {
   }
 }
 
-// When voiceover is on, mute the YouTube video so only the narrator is heard.
 function muteVideoForVoiceover(video) {
   const wasMuted = video.muted;
   video.muted = true;
-  console.log("Video Recap: video muted during voiceover");
   return wasMuted;
 }
 
 function restoreVideoAudio(video, wasMuted) {
   video.muted = wasMuted;
-  console.log("Video Recap: video audio restored");
 }
 
-function ensureStyles() {
+function ensurePanelStyles() {
   if (document.getElementById("video-recap-styles")) {
     return;
   }
@@ -166,61 +147,14 @@ function ensureStyles() {
   const style = document.createElement("style");
   style.id = "video-recap-styles";
   style.textContent = `
-    #video-recap-controls {
-      position: fixed !important;
-      top: 80px !important;
-      right: 20px !important;
-      z-index: 2147483647 !important;
-      display: flex !important;
-      flex-direction: column !important;
-      align-items: stretch !important;
-      gap: 8px !important;
-      font-family: Arial, sans-serif !important;
-    }
-
-    #video-recap-button {
-      padding: 10px 16px !important;
-      border: none !important;
-      border-radius: 999px !important;
-      background: #ff0000 !important;
-      color: #ffffff !important;
-      font-size: 14px !important;
-      font-weight: bold !important;
-      cursor: pointer !important;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25) !important;
-    }
-
-    #video-recap-button:disabled {
-      opacity: 0.7 !important;
-      cursor: wait !important;
-    }
-
-    #video-recap-voiceover-label {
-      display: flex !important;
-      align-items: center !important;
-      gap: 8px !important;
-      padding: 8px 12px !important;
-      border-radius: 999px !important;
-      background: rgba(0, 0, 0, 0.75) !important;
-      color: #ffffff !important;
-      font-size: 13px !important;
-      cursor: pointer !important;
-      user-select: none !important;
-    }
-
-    #video-recap-voiceover {
-      width: 16px !important;
-      height: 16px !important;
-      cursor: pointer !important;
-    }
-
     #video-recap-panel {
       position: fixed !important;
       bottom: 24px !important;
-      left: 50% !important;
-      transform: translateX(-50%) !important;
+      right: 24px !important;
+      left: auto !important;
+      transform: none !important;
       z-index: 2147483647 !important;
-      width: min(90%, 520px) !important;
+      width: min(360px, calc(100vw - 48px)) !important;
       background: rgba(0, 0, 0, 0.85) !important;
       color: #ffffff !important;
       border-radius: 12px !important;
@@ -232,23 +166,170 @@ function ensureStyles() {
 
     #video-recap-panel h3 {
       margin: 0 0 8px 0 !important;
-      font-size: 16px !important;
+      font-size: 15px !important;
     }
 
     #video-recap-panel p {
-      margin: 0 !important;
+      margin: 0 0 12px 0 !important;
       color: #eeeeee !important;
+    }
+
+    .video-recap-nav {
+      display: flex !important;
+      align-items: center !important;
+      justify-content: space-between !important;
+      gap: 12px !important;
+      margin-top: 4px !important;
+    }
+
+    .video-recap-nav button {
+      width: 36px !important;
+      height: 36px !important;
+      border: 1px solid rgba(255, 255, 255, 0.3) !important;
+      border-radius: 8px !important;
+      background: rgba(255, 255, 255, 0.12) !important;
+      color: #ffffff !important;
+      font-size: 18px !important;
+      cursor: pointer !important;
+    }
+
+    .video-recap-nav button:hover:not(:disabled) {
+      background: rgba(255, 255, 255, 0.22) !important;
+    }
+
+    .video-recap-nav button:disabled {
+      opacity: 0.35 !important;
+      cursor: not-allowed !important;
+    }
+
+    .video-recap-nav span {
+      font-size: 13px !important;
+      color: #dddddd !important;
+      white-space: nowrap !important;
+    }
+
+    .video-recap-play-segment {
+      width: 100% !important;
+      margin-top: 12px !important;
+      padding: 10px 14px !important;
+      border: none !important;
+      border-radius: 8px !important;
+      background: #2563eb !important;
+      color: #ffffff !important;
+      font-size: 14px !important;
+      font-weight: 600 !important;
+      cursor: pointer !important;
+    }
+
+    .video-recap-play-segment:hover:not(:disabled) {
+      background: #1d4ed8 !important;
+    }
+
+    .video-recap-play-segment:disabled {
+      opacity: 0.55 !important;
+      cursor: not-allowed !important;
+    }
+
+    #video-recap-pause-popup {
+      position: fixed !important;
+      top: 80px !important;
+      right: 24px !important;
+      z-index: 2147483647 !important;
+      width: 280px !important;
+      background: #ffffff !important;
+      color: #374151 !important;
+      border-radius: 12px !important;
+      padding: 16px !important;
+      font-family: Arial, sans-serif !important;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18) !important;
+    }
+
+    #video-recap-pause-popup .popup-title {
+      margin: 0 24px 8px 0 !important;
+      font-size: 13px !important;
+      font-weight: 600 !important;
+      color: #6b7280 !important;
+      text-transform: uppercase !important;
+      letter-spacing: 0.04em !important;
+    }
+
+    #video-recap-pause-popup .status-text {
+      margin: 0 0 12px 0 !important;
+      font-size: 13px !important;
+      line-height: 1.4 !important;
+    }
+
+    #video-recap-pause-popup .recap-action-button {
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      gap: 8px !important;
+      width: 100% !important;
+      padding: 12px 16px !important;
+      border: none !important;
+      border-radius: 8px !important;
+      background: #2563eb !important;
+      color: #ffffff !important;
+      font-size: 15px !important;
+      font-weight: 600 !important;
+      cursor: pointer !important;
+      box-shadow: 0 2px 8px rgba(37, 99, 235, 0.35) !important;
+    }
+
+    #video-recap-pause-popup .recap-action-button:hover:not(:disabled) {
+      background: #1d4ed8 !important;
+    }
+
+    #video-recap-pause-popup .recap-action-button:disabled {
+      opacity: 0.55 !important;
+      cursor: not-allowed !important;
+    }
+
+    #video-recap-pause-popup .recap-action-button svg {
+      width: 18px !important;
+      height: 18px !important;
+    }
+
+    #video-recap-pause-popup .voiceover-row {
+      display: flex !important;
+      align-items: center !important;
+      gap: 10px !important;
+      margin-top: 12px !important;
+      padding-top: 12px !important;
+      border-top: 1px solid #e5e7eb !important;
+      font-size: 14px !important;
+      cursor: pointer !important;
+      user-select: none !important;
+    }
+
+    #video-recap-pause-popup .error-text {
+      margin: 10px 0 0 0 !important;
+      font-size: 12px !important;
+      color: #b00020 !important;
+      line-height: 1.4 !important;
+    }
+
+    #video-recap-pause-popup .close-button {
+      position: absolute !important;
+      top: 10px !important;
+      right: 10px !important;
+      width: 28px !important;
+      height: 28px !important;
+      border: none !important;
+      border-radius: 6px !important;
+      background: transparent !important;
+      color: #6b7280 !important;
+      font-size: 20px !important;
+      line-height: 1 !important;
+      cursor: pointer !important;
+    }
+
+    #video-recap-pause-popup .close-button:hover {
+      background: #f3f4f6 !important;
     }
   `;
 
   document.documentElement.appendChild(style);
-}
-
-function hideRecapControls() {
-  const controls = document.getElementById(RECAP_CONTROLS_ID);
-  if (controls) {
-    controls.remove();
-  }
 }
 
 function hideRecapPanel() {
@@ -258,8 +339,88 @@ function hideRecapPanel() {
   }
 }
 
+function hidePausePopup() {
+  const popup = document.getElementById(PAUSE_POPUP_ID);
+  if (popup) {
+    popup.remove();
+  }
+}
+
+function setPausePopupError(message) {
+  const errorEl = document.querySelector(`#${PAUSE_POPUP_ID} .error-text`);
+  if (errorEl) {
+    errorEl.textContent = message || "";
+  }
+}
+
+function setPausePopupLoading(isLoading) {
+  const button = document.querySelector(`#${PAUSE_POPUP_ID} .recap-action-button`);
+  const buttonText = document.querySelector(
+    `#${PAUSE_POPUP_ID} .recap-action-button-text`
+  );
+
+  if (button) {
+    button.disabled = isLoading;
+  }
+
+  if (buttonText) {
+    buttonText.textContent = isLoading ? "Loading..." : "Recap";
+  }
+}
+
+function showPausePopup() {
+  if (isRecapPlaying || isSegmentPlaying) {
+    return;
+  }
+
+  ensurePanelStyles();
+  hidePausePopup();
+
+  const popup = document.createElement("div");
+  popup.id = PAUSE_POPUP_ID;
+  popup.innerHTML = `
+    <button class="close-button" type="button" aria-label="Close">×</button>
+    <p class="popup-title">Video Recap</p>
+    <p class="status-text">Paused at ${formatTime(lastPauseInfo.pausedAt)}. Ready for recap.</p>
+    <button class="recap-action-button" type="button">
+      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M1 4v6h6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+        <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+      </svg>
+      <span class="recap-action-button-text">Recap</span>
+    </button>
+    <label class="voiceover-row" for="video-recap-voiceover-checkbox">
+      <input type="checkbox" id="video-recap-voiceover-checkbox" />
+      <span>Voiceover</span>
+    </label>
+    <p class="error-text"></p>
+  `;
+
+  document.documentElement.appendChild(popup);
+
+  popup.querySelector(".close-button")?.addEventListener("click", () => {
+    hidePausePopup();
+  });
+
+  popup.querySelector(".recap-action-button")?.addEventListener("click", async () => {
+    setPausePopupError("");
+    setPausePopupLoading(true);
+
+    const voiceoverCheckbox = popup.querySelector("#video-recap-voiceover-checkbox");
+    const result = await startRecap(voiceoverCheckbox?.checked ?? false);
+
+    if (result?.error) {
+      setPausePopupLoading(false);
+      setPausePopupError(result.error);
+      return;
+    }
+
+    hidePausePopup();
+  });
+}
+
 function showRecapPanel(title, text) {
-  ensureStyles();
+  ensurePanelStyles();
   hideRecapPanel();
 
   const panel = document.createElement("div");
@@ -272,43 +433,120 @@ function showRecapPanel(title, text) {
   document.documentElement.appendChild(panel);
 }
 
-function showRecapControls(onRecapClick) {
-  ensureStyles();
-  hideRecapControls();
+async function playKeyMomentSegment(index) {
+  if (!lastRecapData || !videoElement || isSegmentPlaying || isRecapPlaying) {
+    return;
+  }
 
-  const controls = document.createElement("div");
-  controls.id = RECAP_CONTROLS_ID;
+  const safeIndex = Math.max(
+    0,
+    Math.min(index, lastRecapData.keyMoments.length - 1)
+  );
+  const moment = lastRecapData.keyMoments[safeIndex];
+  const clipDuration =
+    lastRecapData.clipDurations[safeIndex] ??
+    getClipDuration(moment, lastRecapData.pauseAt);
 
-  const button = document.createElement("button");
-  button.id = RECAP_BUTTON_ID;
-  button.type = "button";
-  button.textContent = "Recap";
-  button.addEventListener("click", onRecapClick);
+  const playButton = document.querySelector("#video-recap-play-segment");
+  const prevButton = document.querySelector("#video-recap-prev");
+  const nextButton = document.querySelector("#video-recap-next");
 
-  const label = document.createElement("label");
-  label.id = "video-recap-voiceover-label";
-  label.setAttribute("for", RECAP_VOICEOVER_ID);
-
-  const checkbox = document.createElement("input");
-  checkbox.type = "checkbox";
-  checkbox.id = RECAP_VOICEOVER_ID;
-  checkbox.checked = voiceoverEnabled;
-  checkbox.addEventListener("change", () => {
-    voiceoverEnabled = checkbox.checked;
-    console.log("Video Recap: voiceover", voiceoverEnabled ? "on" : "off");
+  [playButton, prevButton, nextButton].forEach((button) => {
+    if (button) {
+      button.disabled = true;
+    }
   });
 
-  const labelText = document.createElement("span");
-  labelText.textContent = "Voiceover";
+  if (playButton) {
+    playButton.textContent = "Playing segment...";
+  }
 
-  label.appendChild(checkbox);
-  label.appendChild(labelText);
+  isSegmentPlaying = true;
+  stopVoiceover();
 
-  controls.appendChild(button);
-  controls.appendChild(label);
+  try {
+    videoElement.currentTime = moment.timestamp;
+    await videoElement.play();
+    await wait(clipDuration * 1000);
+    suppressPausePopup = true;
+    videoElement.pause();
+  } finally {
+    isSegmentPlaying = false;
 
-  document.documentElement.appendChild(controls);
-  console.log("Video Recap: controls shown (Recap + Voiceover option)");
+    if (playButton) {
+      playButton.disabled = false;
+      playButton.textContent = "Play segment";
+    }
+
+    if (prevButton) {
+      prevButton.disabled = safeIndex === 0;
+    }
+
+    if (nextButton) {
+      nextButton.disabled = safeIndex === lastRecapData.keyMoments.length - 1;
+    }
+
+    setTimeout(() => {
+      suppressPausePopup = false;
+    }, 100);
+  }
+}
+
+// After recap finishes, show arrows so the user can jump between key moments.
+function showKeyMomentPanel(index) {
+  if (!lastRecapData || !lastRecapData.keyMoments.length) {
+    return;
+  }
+
+  const moments = lastRecapData.keyMoments;
+  const safeIndex = Math.max(0, Math.min(index, moments.length - 1));
+  const moment = moments[safeIndex];
+  const total = moments.length;
+
+  lastRecapData.currentIndex = safeIndex;
+
+  if (videoElement) {
+    videoElement.currentTime = moment.timestamp;
+    videoElement.pause();
+  }
+
+  ensurePanelStyles();
+  hideRecapPanel();
+
+  const panel = document.createElement("div");
+  panel.id = RECAP_PANEL_ID;
+  panel.innerHTML = `
+    <h3>${escapeHtml(
+      `${formatTime(moment.timestamp)}–${formatTime(moment.endTime)} — ${moment.title}`
+    )}</h3>
+    <p>${escapeHtml(moment.description)}</p>
+    <div class="video-recap-nav">
+      <button id="video-recap-prev" type="button" ${
+        safeIndex === 0 ? "disabled" : ""
+      } aria-label="Previous key moment">←</button>
+      <span>Key moment ${safeIndex + 1} of ${total}</span>
+      <button id="video-recap-next" type="button" ${
+        safeIndex === total - 1 ? "disabled" : ""
+      } aria-label="Next key moment">→</button>
+    </div>
+    <button id="video-recap-play-segment" class="video-recap-play-segment" type="button">
+      Play segment
+    </button>
+  `;
+
+  document.documentElement.appendChild(panel);
+
+  panel.querySelector("#video-recap-prev")?.addEventListener("click", () => {
+    showKeyMomentPanel(safeIndex - 1);
+  });
+
+  panel.querySelector("#video-recap-next")?.addEventListener("click", () => {
+    showKeyMomentPanel(safeIndex + 1);
+  });
+
+  panel.querySelector("#video-recap-play-segment")?.addEventListener("click", () => {
+    playKeyMomentSegment(safeIndex);
+  });
 }
 
 function requestRecapFromBackend(videoUrl, endTime) {
@@ -332,7 +570,6 @@ function requestRecapFromBackend(videoUrl, endTime) {
 
 async function playHighlightRecap(video, keyMoments, narration, pauseAt) {
   isRecapPlaying = true;
-  hideRecapControls();
 
   const moments = keyMoments
     .filter((moment) => moment.timestamp <= pauseAt)
@@ -340,19 +577,14 @@ async function playHighlightRecap(video, keyMoments, narration, pauseAt) {
 
   if (moments.length === 0) {
     isRecapPlaying = false;
-    alert("No key moments found for this portion of the video.");
-    showRecapControls(handleRecapClick);
-    return;
+    return { error: "No key moments found for this portion of the video." };
   }
-
-  console.log("Video Recap: playing", moments.length, "highlight clips");
 
   showRecapPanel(
     voiceoverEnabled ? "Playing recap with voiceover..." : "Playing recap...",
     narration || "Watch the key moments from what you viewed so far."
   );
 
-  // Only use voiceover if the user turned it on.
   let wasMutedBeforeRecap = video.muted;
 
   if (voiceoverEnabled) {
@@ -361,28 +593,13 @@ async function playHighlightRecap(video, keyMoments, narration, pauseAt) {
 
   try {
     const clipDurations = buildClipDurations(moments, pauseAt);
-    const totalRecapSeconds = clipDurations.reduce((sum, duration) => sum + duration, 0);
     const narrationParts = voiceoverEnabled
       ? splitNarrationForClips(narration || "", moments.length)
       : [];
 
-    console.log("Video Recap: final recap length", totalRecapSeconds.toFixed(1), "seconds");
-
     for (let i = 0; i < moments.length; i++) {
       const moment = moments[i];
       const clipDuration = clipDurations[i];
-
-      console.log(
-        "Video Recap: clip",
-        i + 1,
-        formatTime(moment.timestamp),
-        "to",
-        formatTime(moment.endTime),
-        "(",
-        clipDuration.toFixed(1),
-        "sec ) -",
-        moment.title
-      );
 
       showRecapPanel(
         `${formatTime(moment.timestamp)}–${formatTime(moment.endTime)} — ${moment.title}`,
@@ -413,12 +630,17 @@ async function playHighlightRecap(video, keyMoments, narration, pauseAt) {
     video.currentTime = pauseAt;
     video.pause();
 
-    showRecapPanel(
-      `Recap complete (~${Math.round(totalRecapSeconds)} sec, stopped at ${formatTime(pauseAt)})`,
-      narration || "You finished the highlight recap."
-    );
+    lastRecapData = {
+      keyMoments: moments,
+      narration: narration || "",
+      pauseAt: pauseAt,
+      clipDurations: clipDurations,
+      currentIndex: 0,
+    };
 
-    console.log("Video Recap: highlight recap finished");
+    showKeyMomentPanel(0);
+
+    return { ok: true };
   } finally {
     stopVoiceover();
 
@@ -427,24 +649,26 @@ async function playHighlightRecap(video, keyMoments, narration, pauseAt) {
     }
 
     isRecapPlaying = false;
-    showRecapControls(handleRecapClick);
   }
 }
 
-async function handleRecapClick() {
-  const button = document.getElementById(RECAP_BUTTON_ID);
+async function startRecap(useVoiceover) {
+  voiceoverEnabled = useVoiceover;
+  lastRecapData = null;
+  hideRecapPanel();
 
   if (!videoElement) {
-    alert("Could not find the video player.");
-    return;
+    return { error: "Could not find the video player." };
   }
 
-  if (button) {
-    button.disabled = true;
-    button.textContent = "Loading...";
+  if (!videoElement.paused && !isRecapPlaying) {
+    return { error: "Pause the video first." };
   }
 
-  console.log("Video Recap: fetching key moments from backend...");
+  lastPauseInfo = {
+    videoUrl: window.location.href,
+    pausedAt: videoElement.currentTime,
+  };
 
   const response = await requestRecapFromBackend(
     lastPauseInfo.videoUrl,
@@ -452,17 +676,12 @@ async function handleRecapClick() {
   );
 
   if (response.error) {
-    alert(response.error);
-    if (button) {
-      button.disabled = false;
-      button.textContent = "Recap";
-    }
-    return;
+    return { error: response.error };
   }
 
-  console.log("Video Recap: key moments received:", response.keyMoments);
+  hidePausePopup();
 
-  await playHighlightRecap(
+  return playHighlightRecap(
     videoElement,
     response.keyMoments,
     response.narration,
@@ -472,7 +691,7 @@ async function handleRecapClick() {
 
 function attachVideoListeners(video) {
   video.addEventListener("pause", () => {
-    if (isRecapPlaying) {
+    if (isRecapPlaying || suppressPausePopup) {
       return;
     }
 
@@ -482,21 +701,25 @@ function attachVideoListeners(video) {
     };
 
     console.log("Video paused at:", lastPauseInfo.pausedAt, "seconds");
-    showRecapControls(handleRecapClick);
-  });
 
-  video.addEventListener("play", () => {
-    if (isRecapPlaying) {
+    if (lastRecapData) {
+      hidePausePopup();
+      showKeyMomentPanel(lastRecapData.currentIndex);
       return;
     }
 
-    console.log("Video resumed at:", video.currentTime, "seconds");
-    stopVoiceover();
-    hideRecapControls();
-    hideRecapPanel();
+    showPausePopup();
   });
 
-  console.log("Video Recap: listening for play and pause events");
+  video.addEventListener("play", () => {
+    if (isRecapPlaying || isSegmentPlaying) {
+      return;
+    }
+
+    stopVoiceover();
+    hidePausePopup();
+    hideRecapPanel();
+  });
 }
 
 function trySetupVideo() {
@@ -504,9 +727,7 @@ function trySetupVideo() {
 
   if (video) {
     videoElement = video;
-    console.log("Video Recap: video element found:", video);
   } else {
-    console.log("Video Recap: No video element found");
     return false;
   }
 
@@ -518,14 +739,28 @@ function trySetupVideo() {
   return true;
 }
 
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === "GET_STATUS") {
+    sendResponse({
+      ready: !!videoElement,
+      paused: videoElement ? videoElement.paused : false,
+      pausedAt: lastPauseInfo.pausedAt,
+      isRecapPlaying: isRecapPlaying,
+    });
+    return;
+  }
+
+  if (message.type === "START_RECAP") {
+    startRecap(message.voiceoverEnabled)
+      .then((result) => sendResponse(result))
+      .catch((error) => sendResponse({ error: error.message }));
+    return true;
+  }
+});
+
 if (!trySetupVideo()) {
-  console.log("Video Recap: will retry every 500ms until video element appears...");
-
   const waitForVideo = setInterval(() => {
-    const found = trySetupVideo();
-
-    if (found) {
-      console.log("Video Recap: video found on retry, stopping checks");
+    if (trySetupVideo()) {
       clearInterval(waitForVideo);
     }
   }, 500);
