@@ -72,7 +72,7 @@ async function refreshStatus() {
     statusText.textContent = `Paused at ${formatTime(status.pausedAt)}. Ready for recap.`;
     recapButton.disabled = false;
   } catch (error) {
-    statusText.textContent = "Open a YouTube watch page to use Video Recap.";
+    statusText.textContent = "Open a YouTube watch page to use Focal.";
     recapButton.disabled = true;
     showError(error.message);
   }

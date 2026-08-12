@@ -1,8 +1,6 @@
-// This file is a "content script."
-// It runs on YouTube watch pages and handles video playback + recap logic.
-// A recap popup appears on the page when you pause; popup.html still works from the toolbar.
+// Focal — runs on YouTube watch pages (playback, recap, pause popup).
 
-console.log("Video Recap extension loaded");
+console.log("Focal extension loaded");
 
 const RECAP_PANEL_ID = "video-recap-panel";
 const PAUSE_POPUP_ID = "video-recap-pause-popup";
@@ -139,7 +137,22 @@ function restoreVideoAudio(video, wasMuted) {
   video.muted = wasMuted;
 }
 
+function ensureBrandFont() {
+  if (document.getElementById("focal-brand-font")) {
+    return;
+  }
+
+  const link = document.createElement("link");
+  link.id = "focal-brand-font";
+  link.rel = "stylesheet";
+  link.href =
+    "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap";
+  document.documentElement.appendChild(link);
+}
+
 function ensurePanelStyles() {
+  ensureBrandFont();
+
   if (document.getElementById("video-recap-styles")) {
     return;
   }
@@ -155,11 +168,11 @@ function ensurePanelStyles() {
       transform: none !important;
       z-index: 2147483647 !important;
       width: min(360px, calc(100vw - 48px)) !important;
-      background: rgba(0, 0, 0, 0.85) !important;
+      background: #0b1222 !important;
       color: #ffffff !important;
       border-radius: 12px !important;
       padding: 16px !important;
-      font-family: Arial, sans-serif !important;
+      font-family: Inter, system-ui, sans-serif !important;
       font-size: 14px !important;
       line-height: 1.5 !important;
     }
@@ -171,7 +184,7 @@ function ensurePanelStyles() {
 
     #video-recap-panel p {
       margin: 0 0 12px 0 !important;
-      color: #eeeeee !important;
+      color: #e2e8f0 !important;
     }
 
     .video-recap-nav {
@@ -204,7 +217,7 @@ function ensurePanelStyles() {
 
     .video-recap-nav span {
       font-size: 13px !important;
-      color: #dddddd !important;
+      color: #cbd5e1 !important;
       white-space: nowrap !important;
     }
 
@@ -214,15 +227,16 @@ function ensurePanelStyles() {
       padding: 10px 14px !important;
       border: none !important;
       border-radius: 8px !important;
-      background: #2563eb !important;
+      background: #595fe7 !important;
       color: #ffffff !important;
+      font-family: Inter, system-ui, sans-serif !important;
       font-size: 14px !important;
       font-weight: 600 !important;
       cursor: pointer !important;
     }
 
     .video-recap-play-segment:hover:not(:disabled) {
-      background: #1d4ed8 !important;
+      background: #4a50d4 !important;
     }
 
     .video-recap-play-segment:disabled {
@@ -237,10 +251,10 @@ function ensurePanelStyles() {
       z-index: 2147483647 !important;
       width: 280px !important;
       background: #ffffff !important;
-      color: #374151 !important;
+      color: #0b1222 !important;
       border-radius: 12px !important;
       padding: 16px !important;
-      font-family: Arial, sans-serif !important;
+      font-family: Inter, system-ui, sans-serif !important;
       box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18) !important;
     }
 
@@ -268,16 +282,17 @@ function ensurePanelStyles() {
       padding: 12px 16px !important;
       border: none !important;
       border-radius: 8px !important;
-      background: #2563eb !important;
+      background: #595fe7 !important;
       color: #ffffff !important;
+      font-family: Inter, system-ui, sans-serif !important;
       font-size: 15px !important;
       font-weight: 600 !important;
       cursor: pointer !important;
-      box-shadow: 0 2px 8px rgba(37, 99, 235, 0.35) !important;
+      box-shadow: 0 2px 8px rgba(89, 95, 231, 0.35) !important;
     }
 
     #video-recap-pause-popup .recap-action-button:hover:not(:disabled) {
-      background: #1d4ed8 !important;
+      background: #4a50d4 !important;
     }
 
     #video-recap-pause-popup .recap-action-button:disabled {
@@ -300,6 +315,13 @@ function ensurePanelStyles() {
       font-size: 14px !important;
       cursor: pointer !important;
       user-select: none !important;
+    }
+
+    #video-recap-voiceover-checkbox {
+      width: 16px !important;
+      height: 16px !important;
+      accent-color: #595fe7 !important;
+      cursor: pointer !important;
     }
 
     #video-recap-pause-popup .error-text {
@@ -380,7 +402,7 @@ function showPausePopup() {
   popup.id = PAUSE_POPUP_ID;
   popup.innerHTML = `
     <button class="close-button" type="button" aria-label="Close">×</button>
-    <p class="popup-title">Video Recap</p>
+    <p class="popup-title">Focal</p>
     <p class="status-text">Paused at ${formatTime(lastPauseInfo.pausedAt)}. Ready for recap.</p>
     <button class="recap-action-button" type="button">
       <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
