@@ -62,11 +62,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse(result);
     })
     .catch((error) => {
-      sendResponse({
-        error:
-          error.message ||
-          "Could not reach backend. Is 'npm run dev' running?",
-      });
+      let message = error.message || "Could not reach backend.";
+
+      if (message === "Failed to fetch") {
+        message =
+          "Could not reach localhost:3000. Run 'npm run dev' in your project folder, then try again.";
+      }
+
+      sendResponse({ error: message });
     });
 
   // Return true to tell Chrome we will send a response asynchronously.

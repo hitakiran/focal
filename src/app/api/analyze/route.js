@@ -45,9 +45,44 @@ function isValidAnalysis(data) {
     (moment) =>
       moment &&
       typeof moment.timestamp === "number" &&
+      typeof moment.endTime === "number" &&
       typeof moment.title === "string" &&
       typeof moment.description === "string"
   );
+}
+
+// Fix or cap end times so each clip makes sense for playback.
+function normalizeKeyMoments(keyMoments, watchedEndTime) {
+  const sorted = [...keyMoments].sort((a, b) => a.timestamp - b.timestamp);
+  const MAX_MOMENT_SECONDS = 12;
+
+  return sorted.map((moment, index) => {
+    let endTime = moment.endTime;
+
+    // If Claude gave a bad end time, fall back to the next moment or pause point.
+    if (typeof endTime !== "number" || endTime <= moment.timestamp) {
+      const nextMoment = sorted[index + 1];
+      endTime = nextMoment ? nextMoment.timestamp : watchedEndTime;
+    }
+
+    // Never play past what the user watched.
+    endTime = Math.min(endTime, watchedEndTime);
+
+    // Keep each highlight short — recap should feel quick.
+    if (endTime - moment.timestamp > MAX_MOMENT_SECONDS) {
+      endTime = moment.timestamp + MAX_MOMENT_SECONDS;
+    }
+
+    // Make sure each moment lasts at least 2 seconds.
+    if (endTime - moment.timestamp < 2) {
+      endTime = Math.min(moment.timestamp + 2, watchedEndTime);
+    }
+
+    return {
+      ...moment,
+      endTime: endTime,
+    };
+  });
 }
 
 export async function POST(request) {
@@ -126,27 +161,39 @@ export async function POST(request) {
   });
 
   // Step 5: Build the prompt for Claude.
+  const watchedSeconds = endTime - startTime;
+  const momentCount =
+    watchedSeconds < 120 ? "2-3" : watchedSeconds < 300 ? "3-4" : "4-5";
+
   const prompt = `You are analyzing part of a YouTube video transcript.
 
-The viewer watched from ${startTime} seconds to ${endTime} seconds.
+The viewer watched from ${startTime} seconds to ${endTime} seconds (${watchedSeconds} seconds total).
 
 Here is the transcript for that range:
 ${JSON.stringify(filteredTranscript, null, 2)}
 
 Your task:
-1. Identify the 4-6 most important key moments in this range.
+1. Identify the ${momentCount} most important key moments in this range (fewer is better for short videos).
 2. For each key moment, provide:
-   - timestamp: the time in seconds (number)
+   - timestamp: when this important moment starts (seconds)
+   - endTime: when this important moment ends (seconds) — keep clips SHORT (about 5-12 seconds each)
    - title: a short title (a few words)
    - description: one sentence explaining what happens
-3. Write a short narration script (2-3 sentences) that connects these moments into a coherent recap and briefly mentions what happens between them.
+3. Write a short narration script (2-3 sentences) that connects these moments into a coherent recap.
+
+Important rules:
+- This is a QUICK recap, not a re-watch. Each clip should only cover the core idea.
+- endTime must be greater than timestamp
+- endTime must be ${endTime} or less (the viewer's pause point)
+- Keep each moment focused: endTime should mark where the important idea finishes
+- The total of all clip lengths combined should be well under ${Math.round(watchedSeconds * 0.3)} seconds
 
 Respond with ONLY valid JSON. Do not include markdown, code fences, or any text before or after the JSON.
 
 Use exactly this shape:
 {
   "keyMoments": [
-    { "timestamp": number, "title": string, "description": string }
+    { "timestamp": number, "endTime": number, "title": string, "description": string }
   ],
   "narration": string
 }`;
@@ -202,8 +249,13 @@ Use exactly this shape:
       );
     }
 
-    // Step 8: Send the key moments and narration back to the caller.
-    return NextResponse.json(analysis);
+    // Step 8: Clean up key moment times, then send the response back.
+    const normalizedAnalysis = {
+      narration: analysis.narration,
+      keyMoments: normalizeKeyMoments(analysis.keyMoments, endTime),
+    };
+
+    return NextResponse.json(normalizedAnalysis);
   } catch (error) {
     return NextResponse.json(
       {

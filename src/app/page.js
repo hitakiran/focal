@@ -222,7 +222,9 @@ export default function Home() {
                 className="border-b border-zinc-100 pb-2 last:border-b-0 dark:border-zinc-800"
               >
                 <span className="mr-3 font-mono text-sm text-zinc-500">
-                  {formatTime(moment.timestamp ?? moment.time ?? moment.start ?? 0)}
+                  {moment.endTime != null
+                    ? `${formatTime(moment.timestamp ?? moment.time ?? moment.start ?? 0)}–${formatTime(moment.endTime)}`
+                    : formatTime(moment.timestamp ?? moment.time ?? moment.start ?? 0)}
                 </span>
                 <span>{moment.text ?? moment.description ?? moment.title}</span>
               </li>
