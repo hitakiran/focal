@@ -92,25 +92,70 @@ function wait(ms) {
   });
 }
 
-// Use the browser's built-in text-to-speech for voiceover.
-function speakNarration(text) {
-  if (!text || !window.speechSynthesis) {
-    return;
+// Split the full narration into one part per clip.
+function splitNarrationForClips(narration, clipCount) {
+  const parts = Array.from({ length: clipCount }, () => "");
+  const sentences =
+    narration.match(/[^.!?]+[.!?]*\s*/g)?.map((sentence) => sentence.trim()) || [];
+
+  if (sentences.length === 0) {
+    parts[0] = narration;
+    return parts;
   }
 
-  window.speechSynthesis.cancel();
+  sentences.forEach((sentence, index) => {
+    const partIndex = index % clipCount;
+    parts[partIndex] = parts[partIndex]
+      ? `${parts[partIndex]} ${sentence}`
+      : sentence;
+  });
 
-  const utterance = new SpeechSynthesisUtterance(text);
-  utterance.rate = 1;
-  window.speechSynthesis.speak(utterance);
+  return parts;
+}
 
-  console.log("Video Recap: voiceover started");
+// Speak one clip's narration at a speed that fits that clip's length.
+function speakForClip(text, clipDurationSeconds) {
+  return new Promise((resolve) => {
+    if (!text?.trim() || !window.speechSynthesis) {
+      resolve();
+      return;
+    }
+
+    const utterance = new SpeechSynthesisUtterance(text.trim());
+    const wordCount = text.trim().split(/\s+/).length;
+
+    // Rough guess: at normal speed, people speak about 2 words per second.
+    const naturalDurationSeconds = wordCount / 2;
+    let rate = naturalDurationSeconds / clipDurationSeconds;
+
+    // Keep speech slower and clearer — never rush the narrator.
+    rate = Math.max(0.55, Math.min(rate, 0.9));
+
+    utterance.rate = rate;
+    utterance.onend = resolve;
+    utterance.onerror = resolve;
+
+    window.speechSynthesis.speak(utterance);
+  });
 }
 
 function stopVoiceover() {
   if (window.speechSynthesis) {
     window.speechSynthesis.cancel();
   }
+}
+
+// When voiceover is on, mute the YouTube video so only the narrator is heard.
+function muteVideoForVoiceover(video) {
+  const wasMuted = video.muted;
+  video.muted = true;
+  console.log("Video Recap: video muted during voiceover");
+  return wasMuted;
+}
+
+function restoreVideoAudio(video, wasMuted) {
+  video.muted = wasMuted;
+  console.log("Video Recap: video audio restored");
 }
 
 function ensureStyles() {
@@ -307,55 +352,83 @@ async function playHighlightRecap(video, keyMoments, narration, pauseAt) {
     narration || "Watch the key moments from what you viewed so far."
   );
 
-  // Only read the narration aloud if the user turned voiceover on.
-  if (voiceoverEnabled && narration) {
-    speakNarration(narration);
+  // Only use voiceover if the user turned it on.
+  let wasMutedBeforeRecap = video.muted;
+
+  if (voiceoverEnabled) {
+    wasMutedBeforeRecap = muteVideoForVoiceover(video);
   }
 
-  const clipDurations = buildClipDurations(moments, pauseAt);
-  const totalRecapSeconds = clipDurations.reduce((sum, duration) => sum + duration, 0);
-  console.log("Video Recap: final recap length", totalRecapSeconds.toFixed(1), "seconds");
+  try {
+    const clipDurations = buildClipDurations(moments, pauseAt);
+    const totalRecapSeconds = clipDurations.reduce((sum, duration) => sum + duration, 0);
+    const narrationParts = voiceoverEnabled
+      ? splitNarrationForClips(narration || "", moments.length)
+      : [];
 
-  for (let i = 0; i < moments.length; i++) {
-    const moment = moments[i];
-    const clipDuration = clipDurations[i];
+    console.log("Video Recap: final recap length", totalRecapSeconds.toFixed(1), "seconds");
 
-    console.log(
-      "Video Recap: clip",
-      i + 1,
-      formatTime(moment.timestamp),
-      "to",
-      formatTime(moment.endTime),
-      "(",
-      clipDuration.toFixed(1),
-      "sec ) -",
-      moment.title
-    );
+    for (let i = 0; i < moments.length; i++) {
+      const moment = moments[i];
+      const clipDuration = clipDurations[i];
+
+      console.log(
+        "Video Recap: clip",
+        i + 1,
+        formatTime(moment.timestamp),
+        "to",
+        formatTime(moment.endTime),
+        "(",
+        clipDuration.toFixed(1),
+        "sec ) -",
+        moment.title
+      );
+
+      showRecapPanel(
+        `${formatTime(moment.timestamp)}–${formatTime(moment.endTime)} — ${moment.title}`,
+        moment.description
+      );
+
+      if (voiceoverEnabled) {
+        window.speechSynthesis.cancel();
+
+        const clipSpeech =
+          narrationParts[i]?.trim() ||
+          `${moment.title}. ${moment.description}`;
+
+        const speechPromise = speakForClip(clipSpeech, clipDuration);
+
+        video.currentTime = moment.timestamp;
+        await video.play();
+        await Promise.all([wait(clipDuration * 1000), speechPromise]);
+        video.pause();
+      } else {
+        video.currentTime = moment.timestamp;
+        await video.play();
+        await wait(clipDuration * 1000);
+        video.pause();
+      }
+    }
+
+    video.currentTime = pauseAt;
+    video.pause();
 
     showRecapPanel(
-      `${formatTime(moment.timestamp)}–${formatTime(moment.endTime)} — ${moment.title}`,
-      moment.description
+      `Recap complete (~${Math.round(totalRecapSeconds)} sec, stopped at ${formatTime(pauseAt)})`,
+      narration || "You finished the highlight recap."
     );
 
-    video.currentTime = moment.timestamp;
-    await video.play();
-    await wait(clipDuration * 1000);
-    video.pause();
+    console.log("Video Recap: highlight recap finished");
+  } finally {
+    stopVoiceover();
+
+    if (voiceoverEnabled) {
+      restoreVideoAudio(video, wasMutedBeforeRecap);
+    }
+
+    isRecapPlaying = false;
+    showRecapControls(handleRecapClick);
   }
-
-  video.currentTime = pauseAt;
-  video.pause();
-  stopVoiceover();
-
-  showRecapPanel(
-    `Recap complete (~${Math.round(totalRecapSeconds)} sec, stopped at ${formatTime(pauseAt)})`,
-    narration || "You finished the highlight recap."
-  );
-
-  isRecapPlaying = false;
-  showRecapControls(handleRecapClick);
-
-  console.log("Video Recap: highlight recap finished");
 }
 
 async function handleRecapClick() {
