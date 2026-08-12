@@ -29,6 +29,9 @@ let lastRecapData = null;
 // Where the next default recap should start (advanced when user resumes after pausing).
 let recapCheckpointAt = 0;
 let lastPauseVideoTime = null;
+let hasPlayedFromBeginning = false;
+let midVideoResume = false;
+let pauseClusterStartAt = 0;
 
 function getRecapBudget(pauseAt) {
   const target = pauseAt * 0.25;
@@ -64,6 +67,45 @@ function resetSessionForNewVideo() {
   recapCheckpointAt = 0;
   lastPauseVideoTime = null;
   lastRecapData = null;
+  hasPlayedFromBeginning = false;
+  midVideoResume = false;
+  pauseClusterStartAt = 0;
+}
+
+function updatePauseCluster(pausedAt) {
+  if (
+    lastPauseVideoTime !== null &&
+    pausedAt - lastPauseVideoTime < MIN_GAP_BETWEEN_POPUPS
+  ) {
+    return;
+  }
+
+  pauseClusterStartAt = midVideoResume ? 0 : recapCheckpointAt;
+}
+
+function getEffectiveRecapCheckpoint(pausedAt) {
+  if (midVideoResume) {
+    return 0;
+  }
+
+  // Quick re-pause soon after the last one — merge into the wider recap (e.g. 0→7:20, not 7:00→7:20).
+  if (
+    lastPauseVideoTime !== null &&
+    pausedAt - lastPauseVideoTime < MIN_GAP_BETWEEN_POPUPS
+  ) {
+    return pauseClusterStartAt;
+  }
+
+  if (recapCheckpointAt <= 0) {
+    return 0;
+  }
+
+  // Too little watched since checkpoint — use the cluster start instead.
+  if (pausedAt - recapCheckpointAt < MIN_GAP_BETWEEN_POPUPS) {
+    return pauseClusterStartAt;
+  }
+
+  return recapCheckpointAt;
 }
 
 function shouldAutoShowPausePopup(pausedAt) {
@@ -82,7 +124,8 @@ function shouldAutoShowPausePopup(pausedAt) {
 }
 
 function resolveRecapRange(recapRange, endTime) {
-  let startTime = recapRange === "from_start" ? 0 : recapCheckpointAt;
+  let startTime =
+    recapRange === "from_start" ? 0 : getEffectiveRecapCheckpoint(endTime);
 
   // If the user rewound, fall back to from-start rather than an empty range.
   if (startTime > endTime) {
@@ -99,7 +142,9 @@ function resolveRecapRange(recapRange, endTime) {
 }
 
 function buildRecapRangeOptionsHtml(pausedAt) {
-  if (recapCheckpointAt <= 0 || pausedAt - recapCheckpointAt < 1) {
+  const checkpoint = getEffectiveRecapCheckpoint(pausedAt);
+
+  if (checkpoint <= 0 || pausedAt - checkpoint < MIN_GAP_BETWEEN_POPUPS) {
     return "";
   }
 
@@ -107,7 +152,7 @@ function buildRecapRangeOptionsHtml(pausedAt) {
     <div class="recap-range-options">
       <label class="recap-range-row">
         <input type="radio" name="recap-range" value="since_checkpoint" checked />
-        <span>Since last pause (${formatTime(recapCheckpointAt)} – ${formatTime(pausedAt)})</span>
+        <span>Since last pause (${formatTime(checkpoint)} – ${formatTime(pausedAt)})</span>
       </label>
       <label class="recap-range-row">
         <input type="radio" name="recap-range" value="from_start" />
@@ -757,6 +802,8 @@ async function playHighlightRecap(video, keyMoments, narration, pauseAt, startTi
     };
 
     recapCheckpointAt = pauseAt;
+    midVideoResume = false;
+    pauseClusterStartAt = pauseAt;
 
     showKeyMomentPanel(0);
 
@@ -856,7 +903,21 @@ function attachVideoListeners(video) {
       hidePausePopup();
     }
 
+    updatePauseCluster(pausedAt);
     lastPauseVideoTime = pausedAt;
+  });
+
+  video.addEventListener("seeked", () => {
+    if (isRecapPlaying || isSegmentPlaying) {
+      return;
+    }
+
+    const currentTime = video.currentTime;
+
+    if (!hasPlayedFromBeginning && currentTime >= MIN_WATCH_FOR_POPUP) {
+      midVideoResume = true;
+      recapCheckpointAt = 0;
+    }
   });
 
   video.addEventListener("play", () => {
@@ -864,8 +925,23 @@ function attachVideoListeners(video) {
       return;
     }
 
-    // New watch segment starts wherever playback resumes (handles rewind + skip).
-    recapCheckpointAt = video.currentTime;
+    const currentTime = video.currentTime;
+
+    if (currentTime < MIN_WATCH_FOR_POPUP) {
+      hasPlayedFromBeginning = true;
+      midVideoResume = false;
+    } else if (midVideoResume && lastPauseVideoTime !== null) {
+      // Resumed after a pause during a mid-video jump — switch to normal tracking.
+      midVideoResume = false;
+      recapCheckpointAt = currentTime;
+    } else if (midVideoResume) {
+      recapCheckpointAt = 0;
+    } else if (!hasPlayedFromBeginning && currentTime >= MIN_WATCH_FOR_POPUP) {
+      midVideoResume = true;
+      recapCheckpointAt = 0;
+    } else {
+      recapCheckpointAt = currentTime;
+    }
 
     stopVoiceover();
     hidePausePopup();
@@ -892,14 +968,16 @@ function trySetupVideo() {
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "GET_STATUS") {
+    const effectiveCheckpoint = getEffectiveRecapCheckpoint(lastPauseInfo.pausedAt);
+
     sendResponse({
       ready: !!videoElement,
       paused: videoElement ? videoElement.paused : false,
       pausedAt: lastPauseInfo.pausedAt,
-      recapCheckpointAt: recapCheckpointAt,
+      recapCheckpointAt: effectiveCheckpoint,
       showRecapRangeOptions:
-        recapCheckpointAt > 0 &&
-        lastPauseInfo.pausedAt - recapCheckpointAt >= 1,
+        effectiveCheckpoint > 0 &&
+        lastPauseInfo.pausedAt - effectiveCheckpoint >= MIN_GAP_BETWEEN_POPUPS,
       isRecapPlaying: isRecapPlaying,
     });
     return;
