@@ -1,36 +1,29 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).
+# Focal
 
-## Getting Started
+Recap the part of a YouTube video you've already watched. Pause, hit Recap, and Focal pulls key moments from that section and plays them back as a short highlight reel with optional voiceover.
 
-First, run the development server:
+## What's in this repo
+
+- **Next.js backend** — transcript + Claude analyze APIs
+- **Chrome extension** (`extension/`) — pause popup, recap playback, key-moment panel
+- **Brand docs** — `docs/branding/`
+
+## Run locally
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000) for the test UI. Load the extension from `extension/` in `chrome://extensions` (Developer mode → Load unpacked).
 
-You can start editing the page by modifying `app/page.js`. The page auto-updates as you edit the file.
+The extension calls `http://localhost:3000` via `background.js` — keep the dev server running while using Focal.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## APIs
 
-## Learn More
+- `POST /api/transcript` — `{ videoUrl }` → caption segments
+- `POST /api/analyze` — `{ transcript, startTime, endTime }` → key moments + narration
 
-To learn more about Next.js, take a look at the following resources:
+## Status
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+v1 prototype complete — checkpoint logic, voiceover, branding, and edge cases are in place. Next step: deploy backend (e.g. Vercel) and point the extension at production.
