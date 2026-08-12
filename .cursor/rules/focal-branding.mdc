@@ -1,0 +1,43 @@
+---
+description: Focal extension brand — colors, font, logo, and UI conventions
+globs:
+  - extension/**
+  - docs/branding/**
+  - src/app/**
+---
+
+# Focal branding
+
+When changing or adding UI in this project, follow the Focal brand guide in `docs/branding/`.
+
+## Identity
+
+- **Product name:** Focal (not "Video Recap")
+- **Logo file:** `docs/branding/focal-logo.png` — official Canva logo (stacked rounded squares + white play icon)
+- **Reference:** `docs/branding/focal-brand-guide.html` and `docs/branding/FOCAL-BRAND-GUIDE.md`
+
+## Colors (sampled from logo — CSS variables recommended)
+
+| Token | Hex | Use |
+|-------|-----|-----|
+| Primary | `#595FE7` | Buttons (Recap, Play segment), checkbox accent |
+| Primary hover | `#4A50D4` | Button hover |
+| Accent | `#ABB0F2` | Logo outline, highlights |
+| Text / panel bg | `#0B1222` | Body on light UI, key moment panel background |
+| Panel text | `#FFFFFF` | Text on dark panel |
+| Popup bg | `#FFFFFF` | Pause popup, toolbar popup |
+| Label | `#6B7280` | Uppercase section labels |
+
+## Typography
+
+- **Font:** Inter (Google Fonts), weights 400–700
+- Section labels: 13px, semibold, uppercase, `#6B7280`
+- Buttons: 14–15px, semibold, white on primary
+
+## UI surfaces
+
+1. **Pause popup** — white card, top-right on YouTube; "FOCAL" label, Recap button, Voiceover toggle
+2. **Key moment panel** — dark `#0B1222`, bottom-right; nav arrows + Play segment button
+3. **Toolbar popup** — same styling as pause popup
+
+Do not reintroduce generic blue `#2563EB` or Arial unless explicitly requested.

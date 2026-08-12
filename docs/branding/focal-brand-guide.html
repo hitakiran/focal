@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Focal</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --primary: #595fe7;
+        --primary-hover: #4a50d4;
+        --accent: #abb0f2;
+        --text: #0b1222;
+        --text-muted: #64748b;
+        --label: #6b7280;
+        --panel-bg: #0b1222;
+        --panel-text: #ffffff;
+        --surface: #ffffff;
+        --border: #e2e8f0;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: Inter, system-ui, sans-serif;
+        color: var(--text);
+        background: #f1f5f9;
+        line-height: 1.5;
+      }
+
+      .page {
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 40px 20px 56px;
+      }
+
+      header {
+        display: flex;
+        align-items: center;
+        gap: 20px;
+        margin-bottom: 32px;
+        padding-bottom: 24px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      header img,
+      .logo-display img {
+        width: 96px;
+        height: 96px;
+        border-radius: 20px;
+        flex-shrink: 0;
+      }
+
+      .logo-display img {
+        width: 128px;
+        height: 128px;
+        border-radius: 24px;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 32px;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+      }
+
+      .tagline {
+        display: none;
+      }
+
+      h2 {
+        margin: 0 0 14px;
+        font-size: 18px;
+        font-weight: 600;
+      }
+
+      section {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 22px;
+        margin-bottom: 16px;
+      }
+
+      p {
+        margin: 0 0 10px;
+        color: #334155;
+        font-size: 14px;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 14px;
+      }
+
+      th,
+      td {
+        text-align: left;
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      th {
+        font-weight: 600;
+        color: var(--text);
+        background: #f8fafc;
+      }
+
+      code {
+        font-family: ui-monospace, monospace;
+        font-size: 13px;
+        color: var(--primary);
+      }
+
+      .logo-block {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 24px;
+        align-items: flex-start;
+      }
+
+      .logo-block img {
+        width: 128px;
+        height: 128px;
+        border-radius: 24px;
+      }
+
+      .logo-caption {
+        font-size: 12px;
+        color: var(--text-muted);
+        margin-top: 8px;
+      }
+
+      .swatches {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 12px;
+      }
+
+      @media (max-width: 600px) {
+        .swatches {
+          grid-template-columns: repeat(2, 1fr);
+        }
+      }
+
+      .swatch {
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        overflow: hidden;
+      }
+
+      .swatch-fill {
+        height: 56px;
+      }
+
+      .swatch-meta {
+        padding: 8px 10px;
+        font-size: 12px;
+      }
+
+      .swatch-meta strong {
+        display: block;
+        margin-bottom: 2px;
+      }
+
+      .type-row {
+        padding: 12px 14px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        margin-bottom: 10px;
+      }
+
+      .type-label {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--text-muted);
+        margin-bottom: 6px;
+      }
+
+      .ui-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+      }
+
+      @media (max-width: 640px) {
+        .ui-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      .ui-tag {
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--text-muted);
+        margin-bottom: 8px;
+      }
+
+      .pause-popup {
+        background: #fff;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 16px;
+        max-width: 280px;
+      }
+
+      .pause-popup .label {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--label);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        margin: 0 0 8px;
+      }
+
+      .pause-popup .status {
+        font-size: 13px;
+        color: #374151;
+        margin: 0 0 12px;
+      }
+
+      .btn-recap {
+        width: 100%;
+        padding: 12px 16px;
+        border: none;
+        border-radius: 8px;
+        background: var(--primary);
+        color: #fff;
+        font-family: inherit;
+        font-size: 15px;
+        font-weight: 600;
+      }
+
+      .voiceover {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-top: 12px;
+        padding-top: 12px;
+        border-top: 1px solid #e5e7eb;
+        font-size: 14px;
+        color: #374151;
+      }
+
+      .voiceover-box {
+        width: 16px;
+        height: 16px;
+        border-radius: 3px;
+        background: var(--primary);
+      }
+
+      .key-panel {
+        background: var(--panel-bg);
+        color: var(--panel-text);
+        border-radius: 12px;
+        padding: 16px;
+        max-width: 360px;
+      }
+
+      .key-panel h3 {
+        margin: 0 0 8px;
+        font-size: 15px;
+        font-weight: 600;
+      }
+
+      .key-panel .desc {
+        margin: 0 0 12px;
+        font-size: 14px;
+        color: #e2e8f0;
+      }
+
+      .nav {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 12px;
+      }
+
+      .nav-btn {
+        width: 36px;
+        height: 36px;
+        border-radius: 8px;
+        border: 1px solid rgba(255, 255, 255, 0.25);
+        background: rgba(255, 255, 255, 0.1);
+        color: #fff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 18px;
+      }
+
+      .nav-btn.off {
+        opacity: 0.35;
+      }
+
+      .nav-text {
+        font-size: 13px;
+        color: #cbd5e1;
+      }
+
+      .btn-segment {
+        width: 100%;
+        padding: 10px 14px;
+        border: none;
+        border-radius: 8px;
+        background: var(--primary);
+        color: #fff;
+        font-family: inherit;
+        font-size: 14px;
+        font-weight: 600;
+      }
+
+      footer {
+        display: none;
+      }
+
+      @media print {
+        body {
+          background: #fff;
+        }
+
+        section {
+          break-inside: avoid;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <header>
+        <img src="focal-logo.png" alt="Focal logo" />
+        <div>
+          <h1>Focal</h1>
+        </div>
+      </header>
+
+      <section>
+        <h2>Logo</h2>
+        <div class="logo-block">
+          <div class="logo-display">
+            <img src="focal-logo.png" alt="Focal app icon" />
+          </div>
+          <div>
+            <p><strong>Concept:</strong> Stacked rounded squares with a white play icon — your official Canva logo.</p>
+            <table style="margin-top: 12px">
+              <tr><th>Part</th><th>Hex</th></tr>
+              <tr><td>Background</td><td><code>#0B1222</code></td></tr>
+              <tr><td>Back square (outline)</td><td><code>#ABB0F2</code></td></tr>
+              <tr><td>Front square (solid)</td><td><code>#595FE7</code></td></tr>
+              <tr><td>Play triangle</td><td><code>#FFFFFF</code></td></tr>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Color palette</h2>
+        <div class="swatches">
+          <div class="swatch">
+            <div class="swatch-fill" style="background: #595fe7"></div>
+            <div class="swatch-meta"><strong>Primary</strong><code>#595FE7</code></div>
+          </div>
+          <div class="swatch">
+            <div class="swatch-fill" style="background: #4a50d4"></div>
+            <div class="swatch-meta"><strong>Hover</strong><code>#4A50D4</code></div>
+          </div>
+          <div class="swatch">
+            <div class="swatch-fill" style="background: #abb0f2"></div>
+            <div class="swatch-meta"><strong>Accent</strong><code>#ABB0F2</code></div>
+          </div>
+          <div class="swatch">
+            <div class="swatch-fill" style="background: #0b1222"></div>
+            <div class="swatch-meta"><strong>Text / panel</strong><code>#0B1222</code></div>
+          </div>
+          <div class="swatch">
+            <div class="swatch-fill" style="background: #ffffff; border-bottom: 1px solid #e2e8f0"></div>
+            <div class="swatch-meta"><strong>Panel text</strong><code>#FFFFFF</code></div>
+          </div>
+          <div class="swatch">
+            <div class="swatch-fill" style="background: #ffffff; border-bottom: 1px solid #e2e8f0"></div>
+            <div class="swatch-meta"><strong>Popup bg</strong><code>#FFFFFF</code></div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Typography — Inter</h2>
+        <p>Google Fonts: <code>Inter:wght@400;500;600;700</code></p>
+        <div class="type-row">
+          <div class="type-label">Wordmark</div>
+          <div style="font-size: 24px; font-weight: 700; letter-spacing: -0.02em">Focal</div>
+        </div>
+        <div class="type-row">
+          <div class="type-label">Section label</div>
+          <div style="font-size: 13px; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.04em">Focal</div>
+        </div>
+        <div class="type-row">
+          <div class="type-label">Body / status</div>
+          <div style="font-size: 13px">Paused at 4:46. Ready for recap.</div>
+        </div>
+        <div class="type-row">
+          <div class="type-label">Button</div>
+          <div style="font-size: 15px; font-weight: 600; color: #595fe7">Recap</div>
+        </div>
+      </section>
+
+      <section>
+        <h2>UI components</h2>
+        <div class="ui-grid">
+          <div>
+            <div class="ui-tag">Pause popup · top-right</div>
+            <div class="pause-popup">
+              <p class="label">Focal</p>
+              <p class="status">Paused at 4:46. Ready for recap.</p>
+              <button class="btn-recap" type="button">Recap</button>
+              <div class="voiceover">
+                <div class="voiceover-box"></div>
+                <span>Voiceover</span>
+              </div>
+            </div>
+          </div>
+          <div>
+            <div class="ui-tag">Key moment panel · bottom-right</div>
+            <div class="key-panel">
+              <h3>1:37–1:47 — What Multiplication Means</h3>
+              <p class="desc">The speaker introduces multiplication as repeated addition.</p>
+              <div class="nav">
+                <div class="nav-btn off">←</div>
+                <span class="nav-text">Key moment 2 of 5</span>
+                <div class="nav-btn">→</div>
+              </div>
+              <button class="btn-segment" type="button">Play segment</button>
+            </div>
+          </div>
+        </div>
+        <div style="margin-top: 20px">
+          <div class="ui-tag">Extension toolbar popup</div>
+          <div class="pause-popup">
+            <p class="label">Focal</p>
+            <p class="status">Paused at 4:46. Ready for recap.</p>
+            <button class="btn-recap" type="button">Recap</button>
+            <div class="voiceover">
+              <div class="voiceover-box"></div>
+              <span>Voiceover</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Brand summary</h2>
+        <table>
+          <tr><th>Field</th><th>Value</th></tr>
+          <tr><td>Name</td><td>Focal</td></tr>
+          <tr><td>Vibe</td><td>Sleek, modern, productivity</td></tr>
+          <tr><td>Logo</td><td>Stacked squares + white play icon (Canva)</td></tr>
+          <tr><td>Primary color</td><td><code>#595FE7</code></td></tr>
+          <tr><td>Font</td><td>Inter</td></tr>
+        </table>
+      </section>
+
+    </div>
+  </body>
+</html>
