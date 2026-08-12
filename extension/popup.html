@@ -11,6 +11,17 @@
       <p class="popup-title">Focal</p>
       <p id="status-text" class="status-text">Checking video...</p>
 
+      <div id="recap-range-section" class="recap-range-section" hidden>
+        <label class="recap-range-row">
+          <input type="radio" name="recap-range" value="since_checkpoint" checked />
+          <span id="since-checkpoint-label">Since last pause</span>
+        </label>
+        <label class="recap-range-row">
+          <input type="radio" name="recap-range" value="from_start" />
+          <span id="from-start-label">From beginning</span>
+        </label>
+      </div>
+
       <button id="recap-button" type="button" disabled>
         <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <path

@@ -9,7 +9,7 @@
 // Make sure you run "npm run dev" in your project folder first!
 const API_BASE_URL = "http://localhost:3000";
 
-async function fetchRecap(videoUrl, endTime) {
+async function fetchRecap(videoUrl, startTime, endTime) {
   // --- Part A: Get the video's transcript (captions) ---
   const transcriptResponse = await fetch(`${API_BASE_URL}/api/transcript`, {
     method: "POST",
@@ -33,7 +33,7 @@ async function fetchRecap(videoUrl, endTime) {
     },
     body: JSON.stringify({
       transcript: transcriptData.transcript,
-      startTime: 0,
+      startTime: startTime,
       endTime: endTime,
     }),
   });
@@ -57,7 +57,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return;
   }
 
-  fetchRecap(message.videoUrl, message.endTime)
+  fetchRecap(message.videoUrl, message.startTime ?? 0, message.endTime)
     .then((result) => {
       sendResponse(result);
     })

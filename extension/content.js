@@ -7,6 +7,9 @@ const PAUSE_POPUP_ID = "video-recap-pause-popup";
 
 const MIN_CLIP_SECONDS = 3;
 const MAX_CLIP_SECONDS = 12;
+const MIN_WATCH_FOR_POPUP = 30;
+const MIN_GAP_BETWEEN_POPUPS = 60;
+const MAX_RECAP_WINDOW = 45 * 60;
 
 let listenersAttached = false;
 let videoElement = null;
@@ -22,6 +25,10 @@ let lastPauseInfo = {
 
 // Saved after a recap finishes so the user can browse key moments with arrows.
 let lastRecapData = null;
+
+// Where the next default recap should start (advanced when user resumes after pausing).
+let recapCheckpointAt = 0;
+let lastPauseVideoTime = null;
 
 function getRecapBudget(pauseAt) {
   const target = pauseAt * 0.25;
@@ -47,6 +54,72 @@ function formatTime(seconds) {
   const minutes = Math.floor(seconds / 60);
   const remainingSeconds = Math.floor(seconds % 60);
   return `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`;
+}
+
+function formatMomentTitle(moment) {
+  return `${moment.title} (${formatTime(moment.timestamp)}–${formatTime(moment.endTime)})`;
+}
+
+function resetSessionForNewVideo() {
+  recapCheckpointAt = 0;
+  lastPauseVideoTime = null;
+  lastRecapData = null;
+}
+
+function shouldAutoShowPausePopup(pausedAt) {
+  if (pausedAt < MIN_WATCH_FOR_POPUP) {
+    return false;
+  }
+
+  if (
+    lastPauseVideoTime !== null &&
+    pausedAt - lastPauseVideoTime < MIN_GAP_BETWEEN_POPUPS
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
+function resolveRecapRange(recapRange, endTime) {
+  let startTime = recapRange === "from_start" ? 0 : recapCheckpointAt;
+
+  // If the user rewound, fall back to from-start rather than an empty range.
+  if (startTime > endTime) {
+    startTime = 0;
+  }
+
+  startTime = Math.max(0, Math.min(startTime, endTime));
+
+  if (endTime - startTime > MAX_RECAP_WINDOW) {
+    startTime = endTime - MAX_RECAP_WINDOW;
+  }
+
+  return { startTime, endTime };
+}
+
+function buildRecapRangeOptionsHtml(pausedAt) {
+  if (recapCheckpointAt <= 0 || pausedAt - recapCheckpointAt < 1) {
+    return "";
+  }
+
+  return `
+    <div class="recap-range-options">
+      <label class="recap-range-row">
+        <input type="radio" name="recap-range" value="since_checkpoint" checked />
+        <span>Since last pause (${formatTime(recapCheckpointAt)} – ${formatTime(pausedAt)})</span>
+      </label>
+      <label class="recap-range-row">
+        <input type="radio" name="recap-range" value="from_start" />
+        <span>From beginning (0:00 – ${formatTime(pausedAt)})</span>
+      </label>
+    </div>
+  `;
+}
+
+function getSelectedRecapRange(container) {
+  const selected = container?.querySelector('input[name="recap-range"]:checked');
+  return selected?.value === "from_start" ? "from_start" : "since_checkpoint";
 }
 
 function escapeHtml(text) {
@@ -349,6 +422,27 @@ function ensurePanelStyles() {
     #video-recap-pause-popup .close-button:hover {
       background: #f3f4f6 !important;
     }
+
+    .recap-range-options {
+      margin-bottom: 12px !important;
+      display: flex !important;
+      flex-direction: column !important;
+      gap: 8px !important;
+    }
+
+    .recap-range-row {
+      display: flex !important;
+      align-items: flex-start !important;
+      gap: 8px !important;
+      font-size: 13px !important;
+      line-height: 1.4 !important;
+      cursor: pointer !important;
+    }
+
+    .recap-range-row input {
+      margin-top: 2px !important;
+      accent-color: #595fe7 !important;
+    }
   `;
 
   document.documentElement.appendChild(style);
@@ -403,7 +497,8 @@ function showPausePopup() {
   popup.innerHTML = `
     <button class="close-button" type="button" aria-label="Close">×</button>
     <p class="popup-title">Focal</p>
-    <p class="status-text">Paused at ${formatTime(lastPauseInfo.pausedAt)}. Ready for recap.</p>
+    <p class="status-text">Paused at ${formatTime(lastPauseInfo.pausedAt)}. Ready for recap?</p>
+    ${buildRecapRangeOptionsHtml(lastPauseInfo.pausedAt)}
     <button class="recap-action-button" type="button">
       <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
         <path d="M1 4v6h6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
@@ -429,7 +524,8 @@ function showPausePopup() {
     setPausePopupLoading(true);
 
     const voiceoverCheckbox = popup.querySelector("#video-recap-voiceover-checkbox");
-    const result = await startRecap(voiceoverCheckbox?.checked ?? false);
+    const recapRange = getSelectedRecapRange(popup);
+    const result = await startRecap(voiceoverCheckbox?.checked ?? false, recapRange);
 
     if (result?.error) {
       setPausePopupLoading(false);
@@ -538,9 +634,7 @@ function showKeyMomentPanel(index) {
   const panel = document.createElement("div");
   panel.id = RECAP_PANEL_ID;
   panel.innerHTML = `
-    <h3>${escapeHtml(
-      `${formatTime(moment.timestamp)}–${formatTime(moment.endTime)} — ${moment.title}`
-    )}</h3>
+    <h3>${escapeHtml(formatMomentTitle(moment))}</h3>
     <p>${escapeHtml(moment.description)}</p>
     <div class="video-recap-nav">
       <button id="video-recap-prev" type="button" ${
@@ -571,12 +665,13 @@ function showKeyMomentPanel(index) {
   });
 }
 
-function requestRecapFromBackend(videoUrl, endTime) {
+function requestRecapFromBackend(videoUrl, startTime, endTime) {
   return new Promise((resolve) => {
     chrome.runtime.sendMessage(
       {
         type: "FETCH_RECAP",
         videoUrl: videoUrl,
+        startTime: startTime,
         endTime: endTime,
       },
       (response) => {
@@ -590,11 +685,14 @@ function requestRecapFromBackend(videoUrl, endTime) {
   });
 }
 
-async function playHighlightRecap(video, keyMoments, narration, pauseAt) {
+async function playHighlightRecap(video, keyMoments, narration, pauseAt, startTime) {
   isRecapPlaying = true;
 
   const moments = keyMoments
-    .filter((moment) => moment.timestamp <= pauseAt)
+    .filter(
+      (moment) =>
+        moment.timestamp >= startTime && moment.timestamp <= pauseAt
+    )
     .sort((a, b) => a.timestamp - b.timestamp);
 
   if (moments.length === 0) {
@@ -623,10 +721,7 @@ async function playHighlightRecap(video, keyMoments, narration, pauseAt) {
       const moment = moments[i];
       const clipDuration = clipDurations[i];
 
-      showRecapPanel(
-        `${formatTime(moment.timestamp)}–${formatTime(moment.endTime)} — ${moment.title}`,
-        moment.description
-      );
+      showRecapPanel(formatMomentTitle(moment), moment.description);
 
       if (voiceoverEnabled) {
         window.speechSynthesis.cancel();
@@ -656,9 +751,12 @@ async function playHighlightRecap(video, keyMoments, narration, pauseAt) {
       keyMoments: moments,
       narration: narration || "",
       pauseAt: pauseAt,
+      startTime: startTime,
       clipDurations: clipDurations,
       currentIndex: 0,
     };
+
+    recapCheckpointAt = pauseAt;
 
     showKeyMomentPanel(0);
 
@@ -674,7 +772,7 @@ async function playHighlightRecap(video, keyMoments, narration, pauseAt) {
   }
 }
 
-async function startRecap(useVoiceover) {
+async function startRecap(useVoiceover, recapRange = "since_checkpoint") {
   voiceoverEnabled = useVoiceover;
   lastRecapData = null;
   hideRecapPanel();
@@ -692,9 +790,21 @@ async function startRecap(useVoiceover) {
     pausedAt: videoElement.currentTime,
   };
 
+  const { startTime, endTime } = resolveRecapRange(
+    recapRange,
+    lastPauseInfo.pausedAt
+  );
+
+  if (endTime - startTime < 5) {
+    return {
+      error: "Watch a bit more of the video before running a recap.",
+    };
+  }
+
   const response = await requestRecapFromBackend(
     lastPauseInfo.videoUrl,
-    lastPauseInfo.pausedAt
+    startTime,
+    endTime
   );
 
   if (response.error) {
@@ -707,7 +817,8 @@ async function startRecap(useVoiceover) {
     videoElement,
     response.keyMoments,
     response.narration,
-    lastPauseInfo.pausedAt
+    endTime,
+    startTime
   );
 }
 
@@ -717,26 +828,44 @@ function attachVideoListeners(video) {
       return;
     }
 
+    const videoUrl = window.location.href;
+
+    if (lastPauseInfo.videoUrl && lastPauseInfo.videoUrl !== videoUrl) {
+      resetSessionForNewVideo();
+    }
+
+    const pausedAt = video.currentTime;
+
     lastPauseInfo = {
-      videoUrl: window.location.href,
-      pausedAt: video.currentTime,
+      videoUrl: videoUrl,
+      pausedAt: pausedAt,
     };
 
-    console.log("Video paused at:", lastPauseInfo.pausedAt, "seconds");
+    console.log("Video paused at:", pausedAt, "seconds");
 
     if (lastRecapData) {
       hidePausePopup();
       showKeyMomentPanel(lastRecapData.currentIndex);
+      lastPauseVideoTime = pausedAt;
       return;
     }
 
-    showPausePopup();
+    if (shouldAutoShowPausePopup(pausedAt)) {
+      showPausePopup();
+    } else {
+      hidePausePopup();
+    }
+
+    lastPauseVideoTime = pausedAt;
   });
 
   video.addEventListener("play", () => {
     if (isRecapPlaying || isSegmentPlaying) {
       return;
     }
+
+    // New watch segment starts wherever playback resumes (handles rewind + skip).
+    recapCheckpointAt = video.currentTime;
 
     stopVoiceover();
     hidePausePopup();
@@ -767,13 +896,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       ready: !!videoElement,
       paused: videoElement ? videoElement.paused : false,
       pausedAt: lastPauseInfo.pausedAt,
+      recapCheckpointAt: recapCheckpointAt,
+      showRecapRangeOptions:
+        recapCheckpointAt > 0 &&
+        lastPauseInfo.pausedAt - recapCheckpointAt >= 1,
       isRecapPlaying: isRecapPlaying,
     });
     return;
   }
 
   if (message.type === "START_RECAP") {
-    startRecap(message.voiceoverEnabled)
+    startRecap(message.voiceoverEnabled, message.recapRange || "since_checkpoint")
       .then((result) => sendResponse(result))
       .catch((error) => sendResponse({ error: error.message }));
     return true;
@@ -787,3 +920,15 @@ if (!trySetupVideo()) {
     }
   }, 500);
 }
+
+// YouTube is a single-page app — reset checkpoints when the user navigates to a new video.
+let lastKnownVideoUrl = window.location.href;
+setInterval(() => {
+  const currentUrl = window.location.href;
+  if (currentUrl !== lastKnownVideoUrl) {
+    lastKnownVideoUrl = currentUrl;
+    resetSessionForNewVideo();
+    hidePausePopup();
+    hideRecapPanel();
+  }
+}, 1000);

@@ -31,6 +31,27 @@ body {
   line-height: 1.4;
 }
 
+.recap-range-section {
+  margin-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.recap-range-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.recap-range-row input {
+  margin-top: 2px;
+  accent-color: #595fe7;
+}
+
 #recap-button {
   display: flex;
   align-items: center;

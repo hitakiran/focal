@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Focal",
-  "version": "0.9",
+  "version": "1.0",
   "description": "Recap the part of a YouTube video you've already watched.",
 
   "permissions": ["activeTab"],

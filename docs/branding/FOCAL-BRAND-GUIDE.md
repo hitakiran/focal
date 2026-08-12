@@ -50,7 +50,7 @@
 ### Pause popup (top-right on YouTube)
 - White card, 280px wide, 12px radius
 - Gray uppercase “FOCAL” label
-- Status: “Paused at 4:46. Ready for recap.”
+- Status: “Paused at 4:46. Ready for recap?”
 - Primary **Recap** button (`#595FE7`)
 - **Voiceover** checkbox (accent `#595FE7`)
 
