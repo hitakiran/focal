@@ -2,6 +2,8 @@
 
 A chrome extension that recaps watched YouTube video segments into short, AI-generated highlight clips using Claude API.
 
+Checkout my landing page: [focal.com](https://focal-landing-two.vercel.app/)
+
 ## What's in this repo
 
 - **Next.js backend** — transcript + Claude analyze APIs
