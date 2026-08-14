@@ -1,6 +1,6 @@
 # Focal
 
-Recap the part of a YouTube video you've already watched. Pause, hit Recap, and Focal pulls key moments from that section and plays them back as a short highlight reel with optional voiceover.
+A chrome extension that recaps watched YouTube video segments into short, AI-generated highlight clips using Claude API.
 
 ## What's in this repo
 
